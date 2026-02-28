@@ -1,0 +1,37 @@
+# ── CRITICAL — Never push these ──────────────────
+.env
+*.env
+
+# ── Virtual Environment ───────────────────────────
+venv/
+.venv/
+env/
+
+# ── ChromaDB (large vector database files) ───────
+chroma_db/
+
+# ── Generated PDF outputs ─────────────────────────
+outputs/
+
+# ── Python cache ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# ── VS Code settings ──────────────────────────────
+.vscode/
+
+# ── PyTest cache ──────────────────────────────────
+.pytest_cache/
+.coverage
+
+# ── OS files ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Logs ──────────────────────────────────────────
+*.log
+logs/
