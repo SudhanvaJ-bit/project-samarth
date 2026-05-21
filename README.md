@@ -296,7 +296,7 @@ python tests/test_integration.py  # Full pipeline
 - [x] IEPState TypedDict — shared pipeline state
 - [x] RAG layer with official legal documents
 - [x] Scraper Agent — insight extraction
-- [ ] Compliance Agent — legal verification
+- [x] Compliance Agent — legal verification
 - [ ] Drafting Agent — IEP section writing
 - [ ] Supervisor Agent — orchestration
 - [ ] LangGraph pipeline wiring
