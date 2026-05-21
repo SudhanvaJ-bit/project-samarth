@@ -278,8 +278,8 @@ python tests/test_integration.py  # Full pipeline
 | Step 2 | State Layer — IEPState TypedDict | ✅ Complete |
 | Step 3 | RAG Layer — Legal Document Search | ✅ Complete |
 | Step 4 | Scraper Agent + Tests | ✅ Complete |
-| Step 5 | Compliance Agent + Tests | 🔄 In Progress |
-| Step 6 | Drafting Agent + Tests | ⬜ Pending |
+| Step 5 | Compliance Agent + Tests | ✅ Complete |
+| Step 6 | Drafting Agent + Tests | 🔄 In Progress |
 | Step 7 | Supervisor Agent + Tests | ⬜ Pending |
 | Step 8 | LangGraph Pipeline Assembly | ⬜ Pending |
 | Step 9 | PDF Generator | ⬜ Pending |
