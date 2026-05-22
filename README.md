@@ -279,8 +279,8 @@ python tests/test_integration.py  # Full pipeline
 | Step 3 | RAG Layer — Legal Document Search | ✅ Complete |
 | Step 4 | Scraper Agent + Tests | ✅ Complete |
 | Step 5 | Compliance Agent + Tests | ✅ Complete |
-| Step 6 | Drafting Agent + Tests | 🔄 In Progress |
-| Step 7 | Supervisor Agent + Tests | ⬜ Pending |
+| Step 6 | Drafting Agent + Tests | ✅ Complete |
+| Step 7 | Supervisor Agent + Tests | 🔄 In Progress |
 | Step 8 | LangGraph Pipeline Assembly | ⬜ Pending |
 | Step 9 | PDF Generator | ⬜ Pending |
 | Step 10 | FastAPI Backend | ⬜ Pending |
@@ -297,7 +297,7 @@ python tests/test_integration.py  # Full pipeline
 - [x] RAG layer with official legal documents
 - [x] Scraper Agent — insight extraction
 - [x] Compliance Agent — legal verification
-- [ ] Drafting Agent — IEP section writing
+- [x] Drafting Agent — IEP section writing
 - [ ] Supervisor Agent — orchestration
 - [ ] LangGraph pipeline wiring
 - [ ] PDF generation
