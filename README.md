@@ -298,8 +298,8 @@ python tests/test_integration.py  # Full pipeline
 - [x] Scraper Agent — insight extraction
 - [x] Compliance Agent — legal verification
 - [x] Drafting Agent — IEP section writing
-- [ ] Supervisor Agent — orchestration
-- [ ] LangGraph pipeline wiring
+- [x] Supervisor Agent — orchestration
+- [x] LangGraph pipeline wiring
 - [ ] PDF generation
 - [ ] FastAPI REST API
 
