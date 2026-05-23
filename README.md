@@ -281,8 +281,8 @@ python tests/test_integration.py  # Full pipeline
 | Step 5 | Compliance Agent + Tests | ✅ Complete |
 | Step 6 | Drafting Agent + Tests | ✅ Complete |
 | Step 7 | Supervisor Agent + Tests | ✅ Complete |
-| Step 8 | LangGraph Pipeline Assembly | 🔄 In Progress |
-| Step 9 | PDF Generator | ⬜ Pending |
+| Step 8 | LangGraph Pipeline Assembly | ✅ Complete |
+| Step 9 | PDF Generator | 🔄 In Progress |
 | Step 10 | FastAPI Backend | ⬜ Pending |
 | Step 11 | Full Integration Test | ⬜ Pending |
 
