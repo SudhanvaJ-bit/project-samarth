@@ -282,8 +282,8 @@ python tests/test_integration.py  # Full pipeline
 | Step 6 | Drafting Agent + Tests | ✅ Complete |
 | Step 7 | Supervisor Agent + Tests | ✅ Complete |
 | Step 8 | LangGraph Pipeline Assembly | ✅ Complete |
-| Step 9 | PDF Generator | 🔄 In Progress |
-| Step 10 | FastAPI Backend | ⬜ Pending |
+| Step 9 | PDF Generator | ✅ Complete |
+| Step 10 | FastAPI Backend | 🔄 In Progress |
 | Step 11 | Full Integration Test | ⬜ Pending |
 
 ---
@@ -300,7 +300,7 @@ python tests/test_integration.py  # Full pipeline
 - [x] Drafting Agent — IEP section writing
 - [x] Supervisor Agent — orchestration
 - [x] LangGraph pipeline wiring
-- [ ] PDF generation
+- [x] PDF generation
 - [ ] FastAPI REST API
 
 ### Phase 2 — Production Ready
