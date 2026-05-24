@@ -73,16 +73,45 @@ class ComplianceReport(TypedDict, total=False):
 
 
 class DraftedIEP(TypedDict, total=False):
-    student_profile_summary:     str
-    present_levels:              str
-    annual_goals:                str
-    short_term_objectives:       str
-    special_education_services:  str
-    accommodations:              str
-    assessment_modifications:    str
-    transition_planning:         str
-    parental_involvement:        str
-    review_schedule:             str
+    """
+    Standard NASET-format IEP sections
+    adapted for Indian RPwD Act 2016 compliance.
+    """
+    # Section 1 — Background Information
+    background_info:         str
+
+    # Section 2 — Present Levels of Performance
+    academic_performance:    str   # Academic/Educational Achievement
+    social_development:      str   # Social Development
+    physical_development:    str   # Physical Development
+    management_needs:        str   # Management Needs
+
+    # Section 3 — Long-Term Adult Outcomes (age 14+)
+    long_term_outcomes:      str
+
+    # Section 4 — Annual Goals and Short-Term Objectives
+    annual_goals:            str
+
+    # Section 5 — Special Education Programs and Services
+    special_education_services: str
+
+    # Section 6 — Participation in General Education
+    general_education_participation: str
+
+    # Section 7 — Participating Agencies (Transition)
+    participating_agencies:  str
+
+    # Section 8 — Coordinated Activities
+    coordinated_activities:  str
+
+    # Section 9 — Graduation / Completion Information
+    graduation_info:         str
+
+    # Section 10 — Summary of Recommendations
+    recommendations_summary: str
+
+    # Section 11 — Reporting Progress to Parents
+    progress_reporting:      str
 
 
 class QAReport(TypedDict, total=False):

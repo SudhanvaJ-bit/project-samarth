@@ -52,15 +52,17 @@ Rules:
 def build_prompt(profile: dict, insights: dict, compliance: dict) -> str:
     age              = int(profile.get("age", 0))
     needs_transition = age >= 14
+    dob_estimate     = f"approximately {2026 - age}"
 
-    return f"""Draft a complete, professional IEP.
-You MUST incorporate ALL mandatory accommodations from the compliance report.
+    return f"""Draft a complete IEP in the standard NASET format for Indian schools.
+MUST incorporate ALL mandatory accommodations from the compliance report.
 
 ━━━ STUDENT ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Name        : {profile.get('student_name')}
 Age / Grade : {profile.get('age')} years / {profile.get('grade', 'N/A')}
 School      : {profile.get('school_name', 'N/A')}
 Disability  : {profile.get('disability_category')} ({profile.get('disability_severity', 'N/A')})
+DOB (approx): {dob_estimate}
 
 ━━━ INSIGHTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Strengths           : {json.dumps(insights.get('strengths', []))}
@@ -69,41 +71,47 @@ Learning Style      : {insights.get('learning_style', 'N/A')}
 Academic Performance: {json.dumps(insights.get('academic_performance', {}))}
 Behavioural Notes   : {json.dumps(insights.get('behavioural_notes', []))}
 Assistive Tech Needs: {json.dumps(insights.get('assistive_tech_needs', []))}
+Recommended Supports: {json.dumps(insights.get('recommended_supports', []))}
 
-━━━ LEGAL REQUIREMENTS — MUST INCLUDE ALL ━━━━━━━━━━━━
+━━━ LEGAL REQUIREMENTS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Mandatory Accommodations:
 {json.dumps(compliance.get('mandatory_accommodations', []), indent=2)}
-
-Identified Gaps to Address:
-{json.dumps(compliance.get('identified_gaps', []), indent=2)}
-
 Compliance Status: {compliance.get('status', 'partial')}
+Compliance Notes : {compliance.get('compliance_notes', '')}
 
 ━━━ GOALS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Short-term Goals: {json.dumps(insights.get('short_term_goals', []))}
 Long-term Goals : {json.dumps(insights.get('long_term_goals', []))}
 
-Return EXACTLY this JSON with all 10 sections fully written:
+Return EXACTLY this JSON (write complete professional content, no placeholders):
 {{
-  "student_profile_summary": "2-paragraph narrative introducing the student, their disability, learning profile, and strengths-based framing. Must mention school name, grade, and disability category.",
+  "background_info": "Student name, school, grade, date of IEP meeting, disability classification per RPwD Act 2016, student ID format, dominant language, date of initiation of services. Parent/guardian names and contact. Medical alerts if any.",
 
-  "present_levels": "Detailed description of current academic and functional performance. What the student CAN do (baseline) and where support is needed. Include specific subjects and skill areas.",
+  "academic_performance": "Section 2A: Current academic achievement levels across all subjects. State present levels for: Academic/Educational Achievement, Cognitive Ability, Language Ability, Learning Style, Rate of Progress. Use format: Present Level: [area] - [student name] is currently functioning [above/at/below] grade level in [area]. Include specific abilities and needs.",
 
-  "annual_goals": "3-5 numbered SMART annual goals. Format each as: Goal N: By [date], [student name] will [measurable action] as measured by [method].",
+  "social_development": "Section 2B: Quality of relationships with peers and adults, feelings about self, social adjustment, behaviors that may impede learning. Present levels of social interaction, self-concept, school/community adjustment. State specific abilities and needs.",
 
-  "short_term_objectives": "Quarterly milestones for each annual goal. Format: Goal 1 Objectives: Q1: [milestone], Q2: [milestone], Q3: [milestone]",
+  "physical_development": "Section 2C: Motor and sensory development, health, vitality, physical skills or limitations. Reference the disability diagnosis. State abilities and needs related to physical participation in school.",
 
-  "special_education_services": "All special education services with: type of service, frequency (sessions per week), duration (minutes per session), service provider, and setting (in-class / pull-out).",
+  "management_needs": "Section 2D: Nature and degree of environmental modifications and human/material resources required. State management needs level (minimal/moderate/significant) for academic, social, and physical goals. Describe abilities and support needed.",
 
-  "accommodations": "Comprehensive list grouped by category: Instructional Accommodations, Environmental Accommodations, Material Accommodations. Must include all legally mandated items.",
+  "long_term_outcomes": "{('Section 3: Post-secondary education/training plans, employment goals, community living goals. Transition service needs. Include guidance/career counseling, course requirements.' if needs_transition else 'Section 3: N/A — Student is below 14 years. Long-term adult outcomes and transition planning will be developed at age 14 per RPwD Act 2016 Section 17 and NCTE Guidelines.')}",
 
-  "assessment_modifications": "Specific exam modifications. Must include extended time (minimum 25% extra as per RPwD Act). List each modification with justification.",
+  "annual_goals": "Section 4: 3-4 measurable annual goals with short-term instructional objectives. Format each as: Annual Goal: [goal statement]. Short-term Objectives: 1. [objective] | Evaluation Procedures: [method] | Evaluation Schedule: [quarterly/monthly]. Cover academic, social, and functional areas.",
 
-  "transition_planning": "{('Detailed transition plan for post-secondary education, vocational training, employment, and independent living. Include specific steps and timelines.' if needs_transition else 'N/A — Student is below 14 years. Transition planning will be introduced at age 14 as required by NCTE Guidelines Section 2.1(h).')}",
+  "special_education_services": "Section 5: A. Special education programs with initiation date, frequency, duration. B. Extended school year services (Yes/No). C. Supplementary aids and modifications with initiation dates. D. Assistive technology devices/services needed (reference RPwD Act Section 17 for mandatory items). E. Program modifications for school personnel. F. Individual testing modifications including extended time (minimum 25% per RPwD Act).",
 
-  "parental_involvement": "Plan for parental engagement: communication frequency, how parents receive progress updates, their role in IEP review, and consent documentation requirements.",
+  "general_education_participation": "Section 6: Extent of participation in general education classes, non-academic and extracurricular activities including physical education. Explain any exemptions (e.g. second language). Describe support personnel required for inclusion.",
 
-  "review_schedule": "Specific review schedule: monthly progress checks, quarterly goal reviews, and annual IEP meeting date. Include who is responsible for each review."
+  "participating_agencies": "Section 7: {'Government agencies, NGOs, rehabilitation centres supporting transition services. Include DDRC, district resource centres, vocational training institutes.' if needs_transition else 'N/A — Transition services not yet applicable. Will be identified at age 14.'}",
+
+  "coordinated_activities": "Section 8: Coordinated set of activities for long-term outcomes. Address: 1. Instruction, 2. Related Services, 3. Employment/Post-secondary Education, 4. Community Experience, 5. Activities of Daily Living, 6. Functional Vocational Assessment. Mark N/A for items not applicable at this age.",
+
+  "graduation_info": "Section 9: Type of certificate/credential sought (e.g. CBSE/ICSE/State Board Certificate). Expected year of school completion. Any special provisions for board examinations under RPwD Act accommodations.",
+
+  "recommendations_summary": "Section 10: Classification of disability per RPwD Act 2016 Schedule. Recommended placement (Inclusive/Resource Room/Special Class). Extended school year services. Transportation needs. Any additional recommendations from the IEP committee.",
+
+  "progress_reporting": "Section 11: Manner and frequency of progress reporting to parents. Must include: frequency of reports (same as non-disabled peers), methods (report cards, teacher contact, progress reports), criteria for measuring progress toward annual goals, parent meeting schedule."
 }}"""
 
 
@@ -163,16 +171,20 @@ def drafting_agent(state: IEPState) -> IEPState:
 
         # ── Validate all 10 sections present ─────────
         required_sections = [
-            "student_profile_summary",
-            "present_levels",
+            "background_info",
+            "academic_performance",
+            "social_development",
+            "physical_development",
+            "management_needs",
+            "long_term_outcomes",
             "annual_goals",
-            "short_term_objectives",
             "special_education_services",
-            "accommodations",
-            "assessment_modifications",
-            "transition_planning",
-            "parental_involvement",
-            "review_schedule",
+            "general_education_participation",
+            "participating_agencies",
+            "coordinated_activities",
+            "graduation_info",
+            "recommendations_summary",
+            "progress_reporting",
         ]
 
         missing = [s for s in required_sections if not parsed.get(s)]

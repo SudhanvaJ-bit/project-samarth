@@ -24,11 +24,12 @@ from datetime import datetime, timezone
 
 from langgraph.graph import StateGraph, END
 
-from agents.state            import IEPState, WorkflowStatus
-from agents.scraper_agent    import scraper_agent
-from agents.compliance_agent import compliance_agent
-from agents.drafting_agent   import drafting_agent
-from agents.supervisor_agent import supervisor_agent, route_after_supervisor
+from agents.state              import IEPState, WorkflowStatus
+from agents.scraper_agent      import scraper_agent
+from agents.compliance_agent   import compliance_agent
+from agents.drafting_agent     import drafting_agent
+from agents.supervisor_agent   import supervisor_agent, route_after_supervisor
+from pdf_generator.iep_pdf     import pdf_generator_node
 
 logger = logging.getLogger(__name__)
 
@@ -36,19 +37,6 @@ logger = logging.getLogger(__name__)
 # ═══════════════════════════════════════════════════════
 # TERMINAL NODES
 # ═══════════════════════════════════════════════════════
-
-def pdf_generator_node(state: IEPState) -> IEPState:
-    """
-    Placeholder PDF generator node.
-    Will be replaced by real ReportLab renderer in Step 9.
-    """
-    logger.info("📄 PDF Generator: (placeholder) IEP ready for rendering")
-    return {
-        **state,
-        "workflow_status": WorkflowStatus.COMPLETED,
-        "pdf_output_path": f"outputs/IEP_{state.get('iep_id', 'unknown')}.pdf",
-        "current_node":    "pdf_generator",
-    }
 
 
 def end_success(state: IEPState) -> IEPState:
