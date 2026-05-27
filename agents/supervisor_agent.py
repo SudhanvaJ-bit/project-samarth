@@ -88,19 +88,23 @@ def _check_compliance_output(state: IEPState):
 
 
 def _check_drafting_output(state: IEPState):
-    """Validates all 10 IEP sections are present."""
+    """Validates all 11 NASET IEP sections are present."""
     draft    = state.get("drafted_iep", {})
     required = [
-        "student_profile_summary",
-        "present_levels",
+        "background_info",
+        "academic_performance",
+        "social_development",
+        "physical_development",
+        "management_needs",
+        "long_term_outcomes",
         "annual_goals",
-        "short_term_objectives",
         "special_education_services",
-        "accommodations",
-        "assessment_modifications",
-        "transition_planning",
-        "parental_involvement",
-        "review_schedule",
+        "general_education_participation",
+        "participating_agencies",
+        "coordinated_activities",
+        "graduation_info",
+        "recommendations_summary",
+        "progress_reporting",
     ]
     missing = [s for s in required if not draft.get(s)]
     return len(missing) == 0, missing
