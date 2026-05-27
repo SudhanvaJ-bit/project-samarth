@@ -283,8 +283,8 @@ python tests/test_integration.py  # Full pipeline
 | Step 7 | Supervisor Agent + Tests | ✅ Complete |
 | Step 8 | LangGraph Pipeline Assembly | ✅ Complete |
 | Step 9 | PDF Generator | ✅ Complete |
-| Step 10 | FastAPI Backend | 🔄 In Progress |
-| Step 11 | Full Integration Test | ⬜ Pending |
+| Step 10 | FastAPI Backend | ✅ Complete |
+| Step 11 | Full Integration Test | 🔄 In Progress |
 
 ---
 
