@@ -363,6 +363,8 @@ Each PDF includes legal compliance citations, signature block, and compliance st
 **Sudhanva Joshi**
 GitHub: [@SudhanvaJ-bit](https://github.com/SudhanvaJ-bit)
 
+**Vikas K B**  
+GitHub: [@Vikas-K-B](https://github.com/Vikas-K-B)
 ---
 
 ## 📃 Legal References
