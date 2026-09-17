@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from rag.retriever import initialize_retriever, get_retriever_stats
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers.iep import router as iep_router
@@ -12,15 +13,24 @@ logger = logging.getLogger("samarth.main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 SAMARTH API starting up...")
-    from agents.graph import samarth_graph
-    logger.info("  ✅ LangGraph compiled and ready")
-    from rag.retriever import retriever
-    retriever._cache_built if hasattr(retriever, '_cache_built') else None
-    logger.info("  ✅ RAG retriever ready")
-    logger.info("🎉 SAMARTH API ready!")
+    # ── Startup ──────────────────────────────────────────────────────────
+    logger.info("SAMARTH starting up…")
+
+    # Build or load ChromaDB vector index
+    logger.info("Initialising ChromaDB retriever…")
+    try:
+        initialize_retriever(docs_dir="./rag/documents")
+        stats = get_retriever_stats()
+        logger.info(f"Retriever ready — {stats['total_chunks']} chunks indexed")
+    except Exception as e:
+        logger.error(f"Retriever init failed: {e}")
+        # Don't crash — fallback to simple retriever if needed
+
+    logger.info("SAMARTH ready ✓")
     yield
-    logger.info("🛑 SAMARTH API shutting down...")
+
+    # ── Shutdown ──────────────────────────────────────────────────────────
+    logger.info("SAMARTH shutting down…")
 
 
 

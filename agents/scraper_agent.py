@@ -8,6 +8,11 @@ clean structured ExtractedInsights.
 
 Input  : state["student_profile"]   (raw text)
 Output : state["extracted_insights"] (structured dict)
+
+FIXES IN THIS VERSION:
+  [1] 'list' object has no attribute 'strip' — Gemini 3.x returns
+      response.content as a list of content blocks rather than a plain
+      string. clean_json_response() coerces any shape to a string.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -24,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 # ── Gemini Client ─────────────────────────────────────
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",   # Flash = faster + cheaper than Pro
+    model="gemini-3.5-flash-lite",
     temperature=0.2,
     google_api_key=os.getenv("GOOGLE_API_KEY"),
 )
@@ -109,12 +114,31 @@ Return EXACTLY this JSON structure:
 }}"""
 
 
-def clean_json_response(raw: str) -> str:
-    """Strip markdown fences if Gemini adds them."""
+# ── [FIX 1] Gemini 3.x returns content as a list of blocks ──
+def clean_json_response(raw) -> str:
+    """
+    Strip markdown fences if Gemini adds them.
+
+    FIX: Gemini 3.x returns response.content as a list of content blocks
+    rather than a plain string. Coerce any shape to a string first.
+    """
+    # Handle list-of-blocks response format (Gemini 3.x)
+    if isinstance(raw, list):
+        parts = []
+        for block in raw:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                parts.append(block.get("text", "") or block.get("content", ""))
+            else:
+                parts.append(str(block))
+        raw = "".join(parts)
+    elif not isinstance(raw, str):
+        raw = str(raw)
+
     raw = raw.strip()
     if raw.startswith("```"):
         lines = raw.split("\n")
-        # Remove first and last fence lines
         lines = [l for l in lines if not l.strip().startswith("```")]
         raw = "\n".join(lines)
     return raw.strip()
@@ -158,7 +182,7 @@ def scraper_agent(state: IEPState) -> IEPState:
             HumanMessage(content=build_prompt(profile)),
         ]
         response = llm.invoke(messages)
-        raw_text = clean_json_response(response.content)
+        raw_text = clean_json_response(response.content)   # [FIX 1]
 
         # ── Parse JSON ────────────────────────────────
         parsed: ExtractedInsights = json.loads(raw_text)
@@ -179,6 +203,14 @@ def scraper_agent(state: IEPState) -> IEPState:
                 "workflow_status": WorkflowStatus.FAILED,
                 "error_log":       errors,
             }
+
+        # ── Coerce list fields to lists of strings ────
+        for key in required_keys:
+            val = parsed.get(key)
+            if isinstance(val, str):
+                parsed[key] = [val]
+            elif isinstance(val, list):
+                parsed[key] = [str(v) for v in val]
 
         logger.info(
             f"  ✅ Extracted: "
