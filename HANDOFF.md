@@ -1,14 +1,14 @@
-# 🤖 Project SAMARTH — AI Handoff Document
-## Complete Context for Continuing Development in a New Chat
-## Last updated: Step 10 is NEXT
+# 🤖 Project SAMARTH — Phase 2 Handoff Document
+## For Claude Code or New Chat Continuation
+## Current status: Step 15 (React Frontend) — IN PROGRESS
+## Tailwind installed. Need to configure + build all components.
 
 ---
 
-## WHO YOU ARE
-You are a Senior AI Engineer and System Architect specializing in Multi-Agent
-Systems (MAS) and Inclusive Education. You are helping build Project SAMARTH
-step by step — one step at a time, test before moving forward, commit after
-each step. Update HANDOFF.md after every step.
+## CRITICAL FIRST INSTRUCTION
+Read this entire document before writing a single line of code.
+Follow the same approach as Phase 1: build one step, test it,
+commit, update HANDOFF.md, then move to the next.
 
 ---
 
@@ -18,11 +18,33 @@ each step. Update HANDOFF.md after every step.
 **Goal:** Automate IEP creation for students with special needs in India.
 **Reduces teacher workload by 80%.**
 **Legal framework:** RPwD Act 2016 + NCTE/NCERT Guidelines.
+**IEP Format:** NASET standard — 11 sections, 14 TypedDict keys.
 
-**The pipeline (FULLY WORKING end-to-end as of Step 9):**
+---
+
+## PHASE 1 — 100% COMPLETE ✅
+
+All 11 steps built, tested, pushed to GitHub.
+
+**Proven pipeline (real Gemini API):**
 ```
-Student Input → Supervisor → Scraper → Compliance (RAG)
-→ Drafting → PDF Generator → COMPLETED
+Dyslexia  (Arjun, 10)  → COMPLETED 62.7s  22.9KB ✅
+ASD       (Priya, 8)   → COMPLETED 72.1s  19.8KB ✅
+Visual    (Rahul, 14)  → COMPLETED 81.9s  23.8KB ✅
+```
+
+**Running the backend:**
+```powershell
+cd D:\SAMARTH
+venv\Scripts\activate
+uvicorn app.main:app --port 8000
+```
+
+**API endpoints:**
+```
+POST http://localhost:8000/iep/generate     → generate IEP
+GET  http://localhost:8000/iep/{id}/download → download PDF
+GET  http://localhost:8000/docs              → Swagger UI
 ```
 
 ---
@@ -33,278 +55,283 @@ Student Input → Supervisor → Scraper → Compliance (RAG)
 |---|---|
 | Agent Framework | LangGraph 1.0.9 |
 | LLM | Google Gemini 2.5 Flash |
-| Vector Search | Simple JSON RAG (ChromaDB for Phase 2) |
-| Legal Documents | RPwD Act 2016 PDF + NCERT Guidelines PDF |
-| PDF Generation | ReportLab 4.4 — NASET 11-section format |
-| API Backend | FastAPI 0.133 (Step 10) |
-| Language | Python 3.13 |
+| RAG | Simple JSON retriever (rag/simple_retriever.py) |
+| Legal Docs | RPwD Act 2016 PDF + NCERT Guidelines PDF |
+| PDF | ReportLab 4.4 — NASET 11-section format |
+| Backend | FastAPI 0.133 on port 8000 |
+| Frontend | React 19 + Vite 8 + TailwindCSS (Step 15) |
+| Language | Python 3.13 + Node 24.7.0 |
 | OS | Windows 11 |
-| Virtual Env | venv at D:\SAMARTH\venv |
 
 ---
 
 ## DEVELOPMENT ENVIRONMENT
 
 ```
-Project location : D:\SAMARTH\
-Virtual env      : D:\SAMARTH\venv\
-Python version   : 3.13.7
-API Key          : Google Gemini (Tier 1 Postpay — billing active)
-Model used       : gemini-2.5-flash  ← ALWAYS use this exact model name
-GitHub repo      : https://github.com/SudhanvaJ-bit/project-samarth
-Branch           : main
+Project root : D:\SAMARTH\
+Backend venv : D:\SAMARTH\venv\
+Frontend     : D:\SAMARTH\frontend\
+Python       : 3.13.7
+Node         : 24.7.0
+npm          : 11.5.1
+LLM model    : gemini-2.5-flash  ← ALWAYS this exact name
+GitHub       : https://github.com/SudhanvaJ-bit/project-samarth
+Branch       : main
 ```
 
-**To activate:**
+**Activate backend:**
 ```powershell
 cd D:\SAMARTH
 venv\Scripts\activate
 ```
 
+**Run backend:**
+```powershell
+uvicorn app.main:app --port 8000
+```
+
+**Run frontend (separate terminal, no venv):**
+```powershell
+cd D:\SAMARTH\frontend
+npm run dev
+```
+
 ---
 
-## COMPLETE PROJECT STRUCTURE
+## COMPLETE FILE STRUCTURE
 
 ```
 D:\SAMARTH\
 │
-├── agents\
-│   ├── __init__.py              ✅
-│   ├── state.py                 ✅ COMPLETE (NASET DraftedIEP updated)
-│   ├── scraper_agent.py         ✅ COMPLETE
-│   ├── compliance_agent.py      ✅ COMPLETE
-│   ├── drafting_agent.py        ✅ COMPLETE (NASET 11-section prompt)
-│   ├── supervisor_agent.py      ✅ COMPLETE
-│   └── graph.py                 ✅ COMPLETE
+├── agents\                      ✅ ALL COMPLETE
+│   ├── state.py                 ← IEPState + NASET 14-key DraftedIEP
+│   ├── scraper_agent.py         ← gemini-2.5-flash, temp=0.2
+│   ├── compliance_agent.py      ← 4 RAG queries + Gemini legal audit
+│   ├── drafting_agent.py        ← NASET 14-section prompt
+│   ├── supervisor_agent.py      ← Pure Python QA + NASET validation
+│   └── graph.py                 ← LangGraph StateGraph
 │
-├── rag\
-│   ├── __init__.py              ✅
-│   ├── simple_retriever.py      ✅ COMPLETE
-│   ├── retriever.py             ✅ COMPLETE
-│   ├── chunks_cache.json        ✅ auto-generated
+├── rag\                         ✅ ALL COMPLETE
+│   ├── simple_retriever.py      ← TF-IDF JSON retriever
+│   ├── retriever.py             ← One-line swap interface
+│   ├── chunks_cache.json        ← Auto-generated from PDFs
 │   └── documents\
-│       ├── rpwd_act_2016.pdf    ✅ official PDF
-│       └── ncte_guidelines.pdf  ✅ official PDF
+│       ├── rpwd_act_2016.pdf
+│       └── ncte_guidelines.pdf
 │
-├── pdf_generator\
-│   ├── __init__.py              ✅
-│   └── iep_pdf.py               ✅ COMPLETE (NASET 11-section format)
+├── pdf_generator\               ✅ COMPLETE
+│   └── iep_pdf.py               ← ReportLab NASET format
 │
-├── app\
-│   ├── __init__.py              ✅
-│   ├── main.py                  ❌ NOT CREATED YET ← Step 10
-│   └── routers\
-│       ├── __init__.py          ✅
-│       └── iep.py               ❌ NOT CREATED YET ← Step 10
+├── app\                         ✅ COMPLETE
+│   ├── main.py                  ← FastAPI + lifespan warmup
+│   └── routers\iep.py           ← POST/GET endpoints
 │
-├── models\
-│   ├── __init__.py              ✅
-│   └── student.py               ❌ NOT CREATED YET ← Step 10
+├── models\                      ✅ COMPLETE
+│   └── student.py               ← Pydantic schemas
 │
-├── tests\
-│   ├── test_state.py            ✅ ALL PASSING
-│   ├── test_rag.py              ✅ ALL PASSING
-│   ├── test_scraper.py          ✅ ALL PASSING
-│   ├── test_compliance.py       ✅ ALL PASSING
-│   ├── test_drafting.py         ✅ ALL PASSING (needs update for NASET)
-│   ├── test_supervisor.py       ✅ ALL PASSING
-│   ├── test_graph.py            ✅ ALL PASSING
-│   ├── test_pdf.py              ✅ ALL PASSING (NASET format)
-│   └── test_integration.py      ❌ NOT CREATED YET ← Step 11
+├── tests\                       ✅ ALL 35+ TESTS PASSING
+│   ├── test_state.py
+│   ├── test_rag.py
+│   ├── test_scraper.py
+│   ├── test_compliance.py
+│   ├── test_drafting.py
+│   ├── test_supervisor.py
+│   ├── test_graph.py
+│   ├── test_pdf.py
+│   ├── test_api.py
+│   └── test_integration.py
 │
-├── outputs\                     ✅ contains generated PDFs
-├── .env                         ✅ configured
-├── .env.example                 ✅
+├── frontend\                    ⏳ IN PROGRESS ← CONTINUE HERE
+│   ├── package.json             ✅ created
+│   ├── vite.config.js           ⚠️ NEEDS TAILWIND CONFIG
+│   ├── src\
+│   │   ├── main.jsx             ✅ exists (default)
+│   │   ├── App.jsx              ❌ NEEDS REWRITE
+│   │   ├── index.css            ⚠️ NEEDS TAILWIND DIRECTIVES
+│   │   └── components\          ❌ ALL TO BE CREATED
+│   │       ├── Layout.jsx
+│   │       ├── StudentForm.jsx
+│   │       ├── PipelineTracker.jsx
+│   │       ├── IEPViewer.jsx
+│   │       └── IEPHistory.jsx
+│   └── src\api\
+│       └── samarth.js           ❌ TO BE CREATED
+│
+├── outputs\                     ✅ 7 PDFs generated
+├── .env                         ✅ GOOGLE_API_KEY set
 ├── .gitignore                   ✅
 ├── requirements.txt             ✅
-├── README.md                    ✅
-└── HANDOFF.md                   ✅ this file
+└── README.md                    ✅
 ```
 
 ---
 
-## CRITICAL DESIGN DECISIONS MADE
+## STEP 15 — WHERE WE ARE RIGHT NOW
 
-### 1. IEP Format — NASET Standard (11 sections)
-User requested standard NASET IEP format. DraftedIEP now uses:
-```python
-class DraftedIEP(TypedDict, total=False):
-    background_info:                 str  # Section 1
-    academic_performance:            str  # Section 2A
-    social_development:              str  # Section 2B
-    physical_development:            str  # Section 2C
-    management_needs:                str  # Section 2D
-    long_term_outcomes:              str  # Section 3
-    annual_goals:                    str  # Section 4
-    special_education_services:      str  # Section 5
-    general_education_participation: str  # Section 6
-    participating_agencies:          str  # Section 7
-    coordinated_activities:          str  # Section 8
-    graduation_info:                 str  # Section 9
-    recommendations_summary:         str  # Section 10
-    progress_reporting:              str  # Section 11
+### Done so far:
+```powershell
+cd D:\SAMARTH
+npm create vite@latest frontend -- --template react  ✅
+cd frontend
+npm install                                           ✅
+npm install axios react-router-dom                   ✅
+npm install -D tailwindcss @tailwindcss/vite         ✅
 ```
 
-### 2. ChromaDB Not Used (RAM issue)
-Simple JSON RAG in `rag/simple_retriever.py`. One-line swap in
-`rag/retriever.py` to enable ChromaDB on deployment.
+### What needs to happen next:
 
-### 3. Graph Edge — CRITICAL
+**15.3 — Configure Tailwind in vite.config.js:**
+```javascript
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+})
+```
+
+**15.4 — Add Tailwind to src/index.css:**
+```css
+@import "tailwindcss";
+```
+
+**15.5 — Configure proxy in vite.config.js (add to defineConfig):**
+```javascript
+server: {
+  proxy: {
+    '/iep': 'http://localhost:8000',
+    '/docs': 'http://localhost:8000',
+  }
+}
+```
+
+**15.6 — Build all components (full list below)**
+
+---
+
+## FRONTEND COMPONENTS TO BUILD
+
+### `src/api/samarth.js`
+```javascript
+import axios from 'axios'
+const api = axios.create({ baseURL: 'http://localhost:8000' })
+
+export const generateIEP = (studentData) =>
+  api.post('/iep/generate', studentData)
+
+export const downloadIEP = (iepId) =>
+  api.get(`/iep/${iepId}/download`, { responseType: 'blob' })
+
+export const checkHealth = () =>
+  api.get('/iep/health')
+```
+
+### `src/App.jsx`
+- React Router with routes:
+  - `/` → GeneratePage (main form)
+  - `/history` → HistoryPage (past IEPs)
+- Persistent sidebar navigation
+- SAMARTH branding
+
+### `src/components/Layout.jsx`
+- Sidebar with nav links
+- Main content area
+- Logo: "🎓 SAMARTH" + "IEP Generator"
+- Nav items: Generate IEP, My IEPs, Health Check
+
+### `src/components/StudentForm.jsx`
+Form fields (all required unless noted):
+- student_name (text)
+- age (number, 3-25)
+- grade (text)
+- school_name (text)
+- disability_category (select — all 12 from DisabilityCategory enum)
+- disability_severity (select — mild/moderate/severe)
+- raw_notes (textarea, min 50 chars)
+- academic_history (textarea, optional)
+- teacher_observations (textarea, optional)
+- parent_concerns (textarea, optional)
+- Submit button → calls generateIEP API
+- Loading state while pipeline runs (~90 seconds)
+
+### `src/components/PipelineTracker.jsx`
+Live status display showing 4 stages:
+- ✅ Scraper Agent — [N] strengths extracted
+- ✅ Compliance Agent — [status] | [N] mandatory items
+- ✅ Drafting Agent — 14 sections written
+- ✅ PDF Generated — [size]KB
+
+Polling: every 3 seconds check if completed.
+Show spinner while running, checkmark when done.
+
+### `src/components/IEPViewer.jsx`
+After generation completes:
+- Show compliance status badge (green/amber/red)
+- Show IEP ID
+- Preview first 4 sections as cards
+- Download PDF button
+- Mandatory accommodations list
+
+### `src/components/IEPHistory.jsx`
+List of previously generated IEPs stored in
+localStorage (since no DB yet in Phase 2 Step 15):
+- Student name, disability, date, status
+- Download button for each
+- Clear history button
+
+---
+
+## DISABILITY CATEGORIES (for select dropdown)
+```javascript
+const DISABILITIES = [
+  "Dyslexia", "Dysgraphia", "Dyscalculia",
+  "Autism Spectrum Disorder", "ADHD",
+  "Visual Impairment", "Hearing Impairment",
+  "Intellectual Disability", "Cerebral Palsy",
+  "Speech and Language Disability",
+  "Multiple Disabilities", "Other"
+]
+```
+
+---
+
+## CRITICAL TECHNICAL NOTES (backend — don't change)
+
+### Model name
+```python
+model = "gemini-2.5-flash"  # Always this exact name
+```
+
+### NASET 14 DraftedIEP keys
+```
+background_info, academic_performance, social_development,
+physical_development, management_needs, long_term_outcomes,
+annual_goals, special_education_services,
+general_education_participation, participating_agencies,
+coordinated_activities, graduation_info,
+recommendations_summary, progress_reporting
+```
+
+### Graph edge (never change)
 ```python
 graph.add_edge("pdf_generator", "end_success")  # NOT supervisor!
 ```
 
-### 4. Model Name
-Always `gemini-2.5-flash` — other versions deprecated/quota-exhausted.
+### Supervisor validates NASET 14 keys
+`_check_drafting_output` in supervisor_agent.py checks all 14.
 
-### 5. JSON Cleaning (all agents)
+### JSON cleaning (all agents)
 ```python
-def clean_json(raw: str) -> str:
+def clean_json(raw):
     raw = raw.strip()
     if raw.startswith("```"):
-        lines = raw.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [l for l in raw.split("\n") if not l.strip().startswith("```")]
         raw = "\n".join(lines)
     return raw.strip()
-```
-
-### 6. State Pattern (all agents)
-```python
-return {**state, "new_field": value, "error_log": errors}
-```
-
----
-
-## COMPLETED STEPS SUMMARY
-
-| Step | What was built | Tests |
-|---|---|---|
-| 0 | Environment | — |
-| 1 | Scaffold | — |
-| 2 | IEPState TypedDict + all enums | 5/5 ✅ |
-| 3 | Simple JSON RAG retriever | 4/4 ✅ |
-| 4 | Scraper Agent (gemini-2.5-flash) | 3/3 ✅ |
-| 5 | Compliance Agent (4 RAG queries) | 3/3 ✅ |
-| 6 | Drafting Agent (NASET 11 sections) | 3/3 ✅ |
-| 7 | Supervisor Agent (pure Python QA) | 7/7 ✅ |
-| 8 | LangGraph graph assembly | 4/4 ✅ |
-| 9 | PDF Generator (NASET format) | 4/4 ✅ |
-
-**Full pipeline tested end-to-end — WorkflowStatus.COMPLETED ✅**
-
----
-
-## REMAINING STEPS
-
-### ⏳ STEP 10 — FastAPI Backend (NEXT)
-
-**Files to create:**
-
-#### `models/student.py`
-```python
-from pydantic import BaseModel, Field
-from typing import Optional, List
-from enum import Enum
-
-class DisabilityCategory(str, Enum):
-    DYSLEXIA           = "Dyslexia"
-    DYSGRAPHIA         = "Dysgraphia"
-    DYSCALCULIA        = "Dyscalculia"
-    ASD                = "Autism Spectrum Disorder"
-    ADHD               = "ADHD"
-    VISUAL_IMPAIRMENT  = "Visual Impairment"
-    HEARING_IMPAIRMENT = "Hearing Impairment"
-    INTELLECTUAL       = "Intellectual Disability"
-    CEREBRAL_PALSY     = "Cerebral Palsy"
-    SPEECH_LANGUAGE    = "Speech and Language Disability"
-    MULTIPLE           = "Multiple Disabilities"
-    OTHER              = "Other"
-
-class DisabilitySeverity(str, Enum):
-    MILD     = "mild"
-    MODERATE = "moderate"
-    SEVERE   = "severe"
-
-class StudentInput(BaseModel):
-    student_name:         str
-    age:                  int           # ge=3, le=25
-    grade:                str
-    school_name:          str
-    disability_category:  DisabilityCategory
-    disability_severity:  DisabilitySeverity = DisabilitySeverity.MILD
-    raw_notes:            str           # min_length=50
-    academic_history:     Optional[str] = None
-    teacher_observations: Optional[str] = None
-    parent_concerns:      Optional[str] = None
-
-class IEPResponse(BaseModel):
-    iep_id:            str
-    student_name:      str
-    workflow_status:   str
-    compliance_status: str
-    pdf_output_path:   Optional[str]
-    generated_at:      Optional[str]
-    errors:            List[str]
-    message:           str
-```
-
-#### `app/routers/iep.py`
-```python
-# Endpoints:
-# POST /iep/generate  → run pipeline → return IEPResponse (status 201)
-# GET  /iep/{id}/download → stream PDF file
-# GET  /health → {"status": "ok"}
-
-# Key logic in POST /iep/generate:
-# 1. Convert StudentInput to dict
-# 2. Convert enum values to strings (.value)
-# 3. Call run_iep_pipeline(student_data, iep_id)
-# 4. Return IEPResponse
-```
-
-#### `app/main.py`
-```python
-# FastAPI app with:
-# - lifespan: warm up samarth_graph + retriever on startup
-# - CORS middleware (allow all origins for dev)
-# - Include iep_router
-# - GET / → project info
-```
-
-**Test:** Use FastAPI TestClient in `tests/test_api.py`
-
----
-
-### ⬜ STEP 11 — Full Integration Test
-
-**File:** `tests/test_integration.py`
-
-Test complete pipeline end-to-end:
-1. `run_iep_pipeline(MOCK_STUDENT)` → WorkflowStatus.COMPLETED
-2. All 14 DraftedIEP sections non-empty
-3. PDF file exists on disk and size > 5KB
-4. FastAPI POST /iep/generate → 201 response
-5. FastAPI GET /iep/{id}/download → PDF bytes returned
-
----
-
-## HOW TO RUN ALL TESTS
-
-```powershell
-cd D:\SAMARTH
-venv\Scripts\activate
-
-# Instant (no API)
-python tests/test_state.py
-python tests/test_rag.py
-python tests/test_supervisor.py
-python tests/test_pdf.py
-
-# API calls (15-90 seconds each)
-python tests/test_scraper.py
-python tests/test_compliance.py
-python tests/test_drafting.py
-python tests/test_graph.py
 ```
 
 ---
@@ -313,40 +340,43 @@ python tests/test_graph.py
 
 Paste this entire document and say:
 
-> "Read this handoff document carefully. I am building Project SAMARTH.
-> Steps 0-9 are complete and all tests are passing. The pipeline runs
-> end-to-end and generates a real NASET-format IEP PDF. I need to
-> continue from Step 10 — FastAPI Backend. Build models/student.py,
-> app/routers/iep.py, and app/main.py. Then test with FastAPI TestClient.
-> Then Step 11 — Full Integration Test. Follow the same approach:
-> build, test, commit, update HANDOFF.md, next step."
+> "Read this handoff document carefully. Project SAMARTH Phase 1
+> is 100% complete. I am building Phase 2 Step 15 — React Frontend.
+> The frontend is already scaffolded at D:\SAMARTH\frontend\ with
+> Vite + React + Tailwind + axios + react-router-dom all installed.
+> Start from Step 15.3 — configure Tailwind in vite.config.js,
+> then build all the components listed in this document one by one.
+> The backend runs on port 8000. Use the same approach: build,
+> test in browser, commit, update HANDOFF.md."
 
 ---
 
 ## PROGRESS TRACKER
 
+### Phase 1 — Complete ✅
 | Step | Component | Status |
 |---|---|---|
-| Step 0 | Environment Setup | ✅ Complete |
-| Step 1 | Project Scaffold | ✅ Complete |
-| Step 2 | State Layer | ✅ Complete |
-| Step 3 | RAG Layer | ✅ Complete |
-| Step 4 | Scraper Agent | ✅ Complete |
-| Step 5 | Compliance Agent | ✅ Complete |
-| Step 6 | Drafting Agent (NASET) | ✅ Complete |
-| Step 7 | Supervisor Agent | ✅ Complete |
-| Step 8 | LangGraph Assembly | ✅ Complete |
-| Step 9 | PDF Generator (NASET) | ✅ Complete |
-| Step 10 | FastAPI Backend | ⏳ NEXT |
-| Step 11 | Full Integration Test | ⬜ Pending |
+| 0-11 | Full backend pipeline | ✅ All complete |
 
-**Overall: 91% complete (10/11 steps done)**
+### Phase 2 — In Progress
+| Step | Component | Status |
+|---|---|---|
+| Step 15 | React Frontend | 🔄 In Progress |
+| Step 15.3 | Configure Tailwind | ⏳ Next |
+| Step 15.4 | src/api/samarth.js | ⬜ |
+| Step 15.5 | App.jsx + Router | ⬜ |
+| Step 15.6 | Layout.jsx | ⬜ |
+| Step 15.7 | StudentForm.jsx | ⬜ |
+| Step 15.8 | PipelineTracker.jsx | ⬜ |
+| Step 15.9 | IEPViewer.jsx | ⬜ |
+| Step 15.10 | IEPHistory.jsx | ⬜ |
+| Step 16 | Railway Deployment | ⬜ |
 
 ---
 
 ## GITHUB
 ```
-Repo        : https://github.com/SudhanvaJ-bit/project-samarth
-Branch      : main
-Last commit : feat(pdf): NASET 11-section IEP format — Step 9 complete
+Repo   : https://github.com/SudhanvaJ-bit/project-samarth
+Branch : main
+State  : Phase 1 complete, Phase 2 Step 15 frontend scaffolded
 ```
