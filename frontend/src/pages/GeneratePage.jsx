@@ -1,10 +1,10 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Bell, MagicWand, SpinnerGap, CheckCircle, Circle,
   FilePdf, PencilSimple, TrendUp, WarningCircle, Pulse, Heart,
   Lightbulb, Paperclip, DownloadSimple, FileText, X,
 } from '@phosphor-icons/react'
-import { generateIEP, generateIEPFromReport, downloadIEP } from '../api/samarth'
+import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts } from '../api/samarth'
 
 const DISABILITIES = [
   'Dyslexia', 'Dysgraphia', 'Dyscalculia', 'Autism Spectrum Disorder', 'ADHD',
@@ -13,35 +13,39 @@ const DISABILITIES = [
 ]
 
 const WORKFLOW_STEPS = [
-  { id: 'profile',    label: 'Student Profile Processing',   activeDesc: 'Extracting data…',          doneDesc: 'Data extracted' },
-  { id: 'compliance', label: 'Educational Standards Review', activeDesc: 'Aligning with RPwD Act…',   doneDesc: 'Compliant with RPwD Act 2016' },
-  { id: 'drafting',   label: 'Draft Preparation',            activeDesc: 'Writing IEP sections…',     doneDesc: 'IEP sections written' },
-  { id: 'pdf',        label: 'PDF Generation',               activeDesc: 'Building document…',        doneDesc: 'Document ready' },
-  { id: 'review',     label: 'Human Review',                 activeDesc: 'Awaiting educator…',        doneDesc: 'Ready for approval' },
+  { id: 'profile',    label: 'Student Profile Processing',   activeDesc: 'Extracting data…',        doneDesc: 'Data extracted' },
+  { id: 'compliance', label: 'Educational Standards Review', activeDesc: 'Aligning with RPwD Act…', doneDesc: 'Compliant with RPwD Act 2016' },
+  { id: 'drafting',   label: 'Draft Preparation',            activeDesc: 'Writing IEP sections…',   doneDesc: 'IEP sections written' },
+  { id: 'pdf',        label: 'PDF Generation',               activeDesc: 'Building document…',      doneDesc: 'Document ready' },
+  { id: 'review',     label: 'Human Review',                 activeDesc: 'Awaiting educator…',      doneDesc: 'Awaiting your review' },
 ]
 
-// ── BUG FIX: keys now match the actual NASET DraftedIEP keys from the backend
-// Old keys (student_profile_summary, present_levels) don't exist → preview was always blank
+// Keys match the actual NASET DraftedIEP keys returned by the backend.
 const PREVIEW_SECTIONS = [
-  ['background_info',           'Background Information'],
-  ['academic_performance',      'Academic Performance'],
-  ['annual_goals',              'Annual Goals'],
-  ['special_education_services','Special Education Services'],
+  ['background_info',            'Background Information'],
+  ['academic_performance',       'Academic Performance'],
+  ['annual_goals',               'Annual Goals'],
+  ['special_education_services', 'Special Education Services'],
 ]
 
 const NOTIFICATIONS = [
-  { id: 1, unread: true,  color: 'var(--teal)',       icon: <CheckCircle size={20} />,   msg: 'IEP Generated for Alex Johnson',        time: '2 mins ago' },
-  { id: 2, unread: true,  color: 'var(--lavender)',   icon: <WarningCircle size={20} />, msg: 'Review Required for Marcus Rodriguez',  time: '1 hour ago' },
-  { id: 3, unread: false, color: 'var(--sage-green)', icon: <Bell size={20} />,          msg: 'New student profile: Mia Chen',         time: 'Yesterday' },
+  { id: 1, unread: true,  color: 'var(--teal)',       icon: <CheckCircle size={20} />,   msg: 'IEP Generated for Alex Johnson',       time: '2 mins ago' },
+  { id: 2, unread: true,  color: 'var(--lavender)',   icon: <WarningCircle size={20} />, msg: 'Review Required for Marcus Rodriguez', time: '1 hour ago' },
+  { id: 3, unread: false, color: 'var(--sage-green)', icon: <Bell size={20} />,          msg: 'New student profile: Mia Chen',        time: 'Yesterday' },
 ]
 
+/**
+ * Pipeline steps 1-4 complete together when the backend returns.
+ * Step 5 (Human Review) is deliberately NOT marked complete — the whole
+ * point of the review step is that a person still has to do it.
+ */
 function getStepStatus(stepId, loading, result) {
-  if (!loading && !result) return 'pending'
-  if (result) return 'completed'
-  return stepId === 'profile' ? 'active' : 'pending'
+  if (loading) return stepId === 'profile' ? 'active' : 'pending'
+  if (!result) return 'pending'
+  return stepId === 'review' ? 'active' : 'completed'
 }
 
-// Safely convert any drafted_iep field value to a displayable string
+// Safely convert any drafted_iep field value to displayable text
 function toPreviewText(value) {
   if (!value) return ''
   if (Array.isArray(value)) return value.map(String).join(' ')
@@ -49,31 +53,22 @@ function toPreviewText(value) {
   return String(value)
 }
 
-// Read history from localStorage once at module level isn't safe across tabs,
-// so we read inside the component via useState initialiser instead.
-function readHistory() {
-  try {
-    return JSON.parse(localStorage.getItem('samarth_iep_history') || '[]')
-  } catch {
-    return []
-  }
-}
-
-export default function GeneratePage({ showToast }) {
+export default function GeneratePage({ showToast, openReview }) {
   const [form, setForm] = useState({
     student_name: '', age: '', grade: '', school_name: '',
     disability_category: '', disability_severity: 'moderate',
     raw_notes: '', academic_history: '', teacher_observations: '', parent_concerns: '',
   })
 
-  const [errors, setErrors]         = useState({})
+  const [errors, setErrors]             = useState({})
   const [attachedFile, setAttachedFile] = useState(null)
-  const [loading, setLoading]       = useState(false)
-  const [result, setResult]         = useState(null)
-  const [error, setError]           = useState(null)
-  const [notifOpen, setNotifOpen]   = useState(false)
-  const [notifs, setNotifs]         = useState(NOTIFICATIONS)
-  const [history, setHistory]       = useState(readHistory)
+  const [loading, setLoading]           = useState(false)
+  const [result, setResult]             = useState(null)
+  const [error, setError]               = useState(null)
+  const [notifOpen, setNotifOpen]       = useState(false)
+  const [notifs, setNotifs]             = useState(NOTIFICATIONS)
+  // Counters come from the server — the signed-in educator's IEPs only
+  const [drafts, setDrafts]             = useState([])
 
   const fileRef = useRef()
 
@@ -81,40 +76,32 @@ export default function GeneratePage({ showToast }) {
 
   const unreadCount = notifs.filter(n => n.unread).length
 
-  const studentsThisMonth = history.filter(h => {
+  const loadStats = useCallback(async () => {
+    try {
+      const { data } = await listDrafts(200)
+      setDrafts(data?.drafts ?? [])
+    } catch { /* counters are non-critical; a 401 is handled globally */ }
+  }, [])
+
+  useEffect(() => { loadStats() }, [loadStats])
+
+  const studentsThisMonth = drafts.filter(h => {
     const now  = new Date()
-    const date = new Date(h.created_at || h.date)
+    const date = new Date(h.created_at)
+    if (Number.isNaN(date.getTime())) return false
     return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear()
   }).length
 
   const validate = () => {
     if (attachedFile) return {}   // PDF route — backend extracts everything
     const e = {}
-    if (!form.student_name.trim())              e.student_name        = 'Required'
-    if (!form.age || form.age < 3 || form.age > 25) e.age             = 'Age must be 3–25'
-    if (!form.grade.trim())                     e.grade               = 'Required'
-    if (!form.school_name.trim())               e.school_name         = 'Required'
-    if (!form.disability_category)              e.disability_category = 'Required'
-    if (form.raw_notes.trim().length < 50)      e.raw_notes           = 'Minimum 50 characters'
+    if (!form.student_name.trim())                  e.student_name        = 'Required'
+    if (!form.age || form.age < 3 || form.age > 25) e.age                 = 'Age must be 3–25'
+    if (!form.grade.trim())                         e.grade               = 'Required'
+    if (!form.school_name.trim())                   e.school_name         = 'Required'
+    if (!form.disability_category)                  e.disability_category = 'Required'
+    if (form.raw_notes.trim().length < 50)          e.raw_notes           = 'Minimum 50 characters'
     return e
-  }
-
-  const saveToHistory = (responseData) => {
-    const prev = readHistory()
-    const entry = {
-      iep_id:              responseData.iep_id,
-      student_name:        responseData.student_name        ?? form.student_name        ?? 'Unknown',
-      disability_category: responseData.disability_category ?? form.disability_category ?? '',
-      // ── BUG FIX: grade was missing from history → AnalyticsPage showed "Unknown" for all entries
-      grade:               form.grade || '',
-      workflow_status:     responseData.workflow_status,
-      created_at:          new Date().toISOString(),
-      date:                new Date().toISOString(),  // kept for backwards-compat
-    }
-    const updated = [entry, ...prev].slice(0, 50)
-    localStorage.setItem('samarth_iep_history', JSON.stringify(updated))
-    setHistory(updated)   // immediate re-render of stats row
-    return entry
   }
 
   const handleGenerate = async () => {
@@ -127,14 +114,13 @@ export default function GeneratePage({ showToast }) {
     try {
       let res
       if (attachedFile) {
-        // Pass the File object directly — samarth.js builds FormData internally
         res = await generateIEPFromReport(attachedFile)
       } else {
         res = await generateIEP({ ...form, age: parseInt(form.age, 10) })
       }
 
       setResult(res.data)
-      saveToHistory(res.data)
+      loadStats()
       showToast(`IEP generated for ${res.data.student_name ?? form.student_name ?? 'student'}`)
     } catch (err) {
       const msg = err?.response?.data?.detail
@@ -216,13 +202,13 @@ export default function GeneratePage({ showToast }) {
         </div>
       </header>
 
-      {/* ── Stats row — fully dynamic ─────────────────────────── */}
+      {/* ── Stats row ─────────────────────────────────────────── */}
       <section className="stats-row">
         <div className="stat-card">
           <div className="stat-icon"><FileText size={28} /></div>
           <div className="stat-info">
             <h3>IEPs Generated</h3>
-            <div className="stat-value">{history.length}</div>
+            <div className="stat-value">{drafts.length}</div>
           </div>
         </div>
         <div className="stat-card">
@@ -355,19 +341,18 @@ export default function GeneratePage({ showToast }) {
                 </button>
               </div>
 
-              {/* Attached file indicator */}
               {attachedFile && (
                 <div className="file-attached">
                   <FileText size={14} />
                   <span>{attachedFile.name}</span>
                   <button onClick={() => setAttachedFile(null)}
-                    style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', padding: 0, marginLeft: 4 }}>
+                    style={{ background: 'none', border: 'none', color: '#ef4444',
+                             cursor: 'pointer', padding: 0, marginLeft: 4 }}>
                     <X size={13} />
                   </button>
                 </div>
               )}
 
-              {/* Error banner */}
               {error && (
                 <div style={{
                   background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)',
@@ -390,7 +375,8 @@ export default function GeneratePage({ showToast }) {
                 <div key={step.id} className={`workflow-step ${status}`}>
                   <div className="step-icon">
                     {status === 'completed' && <CheckCircle size={16} weight="fill" />}
-                    {status === 'active'    && <SpinnerGap  size={16} className="spin" />}
+                    {status === 'active' && step.id === 'review' && <PencilSimple size={16} />}
+                    {status === 'active' && step.id !== 'review' && <SpinnerGap size={16} className="spin" />}
                     {status === 'pending'   && <Circle      size={16} />}
                   </div>
                   <div className="step-content">
@@ -442,14 +428,21 @@ export default function GeneratePage({ showToast }) {
                     )}
                   </div>
 
-                  {result.message && (
-                    <div className="insight-item">
-                      <div className="insight-header text-sage">
-                        <Lightbulb size={20} /><span>Next Step</span>
-                      </div>
-                      <p style={{ fontSize: 13 }}>{result.message}</p>
+                  {/* Human Review prompt — the review step is not optional */}
+                  <div className="insight-item">
+                    <div className="insight-header text-lavender">
+                      <PencilSimple size={20} /><span>Human Review Required</span>
                     </div>
-                  )}
+                    <p style={{ fontSize: 13 }}>
+                      This is an AI-generated draft. Review each section before
+                      the IEP is finalised or shared with parents.
+                    </p>
+                    <button className="btn btn-secondary"
+                      style={{ marginTop: 10, fontSize: 13, padding: '6px 12px' }}
+                      onClick={() => openReview?.(result.iep_id)}>
+                      <PencilSimple size={15} /> Open Review Editor
+                    </button>
+                  </div>
                 </>
               ) : (
                 <>
@@ -499,15 +492,22 @@ export default function GeneratePage({ showToast }) {
             <div>
               <h3>IEP Draft Preview</h3>
               <span className="subtitle">
-                {result ? 'Generation complete' : 'Generated draft preview will appear here'}
+                {result ? 'Generation complete — awaiting human review' : 'Generated draft preview will appear here'}
               </span>
             </div>
             <div className="draft-actions">
               {result ? (
                 <>
                   <button className="btn btn-secondary" onClick={reset}>
-                    <PencilSimple size={16} /> New IEP
+                    <MagicWand size={16} /> New IEP
                   </button>
+
+                  {/* Opens the section-by-section review editor */}
+                  <button className="btn btn-secondary"
+                    onClick={() => openReview?.(result.iep_id)}>
+                    <PencilSimple size={16} /> Review &amp; Edit
+                  </button>
+
                   <button className="btn btn-primary" onClick={handleDownload}>
                     <DownloadSimple size={16} /> Export PDF
                   </button>
@@ -554,14 +554,14 @@ export default function GeneratePage({ showToast }) {
                   ) : null
                 })}
 
-                {/* Fallback if drafted_iep is empty (download-only result) */}
                 {(!result.drafted_iep || Object.keys(result.drafted_iep).length === 0) && (
                   <div className="draft-section">
                     <div className="goal-item">
                       <span className="goal-badge">Complete</span>
                       <p>{result.message}</p>
                       <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>
-                        Download the PDF to view all 14 NASET sections.
+                        Open the review editor to read and edit all 14 NASET
+                        sections, or download the PDF.
                       </p>
                     </div>
                   </div>

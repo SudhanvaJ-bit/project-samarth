@@ -44,16 +44,17 @@ from agents.state import (
     ComplianceStatus, WorkflowStatus
 )
 from rag.retriever import retriever
+from agents.model_config import invoke_with_fallback
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ── Gemini Client ─────────────────────────────────────
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    temperature=0.1,
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-)
+#llm = ChatGoogleGenerativeAI(
+#    model="gemini-3.6-flash",
+#    temperature=0.1,
+#    google_api_key=os.getenv("GOOGLE_API_KEY"),
+#)
 
 # ── System Prompt ─────────────────────────────────────
 SYSTEM_PROMPT = """You are a strict legal compliance officer specializing 
@@ -425,7 +426,7 @@ def compliance_agent(state: IEPState) -> IEPState:
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=build_prompt(profile, insights, legal_context)),
         ]
-        response = llm.invoke(messages)
+        response = invoke_with_fallback("compliance", messages)
         raw_text = clean_json(response.content)   # [FIX 2] handles list shape
 
         # ══════════════════════════════════════════════

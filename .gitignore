@@ -1,37 +1,30 @@
-# ── CRITICAL — Never push these ──────────────────
+# ── Secrets ─────────────────────────────
 .env
-*.env
+.env.*
+!.env.example
 
-# ── Virtual Environment ───────────────────────────
-venv/
-.venv/
-env/
-
-# ── ChromaDB (large vector database files) ───────
-chroma_db/
-
-# ── Generated PDF outputs ─────────────────────────
+# ── Runtime data: contains student information ──
+samarth.db
+drafts/
 outputs/
+.extraction_cache/
+.llm_recordings/
 
-# ── Python cache ──────────────────────────────────
+# ── Python ──────────────────────────────
+venv/
 __pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.Python
+*.pyc
 
-# ── VS Code settings ──────────────────────────────
+# ── Frontend ────────────────────────────
+frontend/node_modules/
+frontend/dist/
+
+# ── Editor / OS ─────────────────────────
 .vscode/
-
-# ── PyTest cache ──────────────────────────────────
-.pytest_cache/
-.coverage
-
-# ── OS files ──────────────────────────────────────
-.DS_Store
+.idea/
 Thumbs.db
-desktop.ini
+.DS_Store
 
-# ── Logs ──────────────────────────────────────────
-*.log
-logs/
+# ── Vector index — rebuild with: python rag/build_index.py ──
+chroma_db/
+rag/chroma_db/

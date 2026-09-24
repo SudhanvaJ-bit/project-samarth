@@ -3,16 +3,37 @@ app/services/draft_store.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DRAFT STORE — persistence layer for the Human Review step.
 
-Saves the full pipeline state needed to regenerate a PDF, so a
-teacher can edit any of the 14 NASET sections and rebuild the
-document WITHOUT re-running any LLM calls.
+Saves everything generate_iep_pdf() needs to rebuild the document, so a
+teacher can edit the IEP and rebuild it WITHOUT any LLM calls.
 
 Storage: JSON files under ./drafts/{iep_id}.json
-(Swap for PostgreSQL when that roadmap item lands — the interface
- here is deliberately small so the swap is contained.)
+(Swap for PostgreSQL later — the interface here is deliberately small.)
+
+WHAT CAN BE EDITED
+  1. Student details (Section 1) — STRUCTURED fields on student_profile:
+     name, age, grade, school, disability, severity, language.
+     The PDF's Section 1 table reads these directly.
+  2. Prose sections (Sections 2–11) — the drafting agent's text.
+
+WHY SECTION 1 IS A FORM, NOT A TEXT BOX
+Section 1 used to be edited as background_info prose. But the PDF builds
+Section 1 from the structured profile, not from that prose — so editing
+the prose (e.g. grade 5.7 → 5) saved correctly yet changed nothing in the
+PDF. Structured data is now edited as structured data.
+
+AUDIT TRAIL
+original_iep and original_profile hold the untouched AI output forever.
+edited_sections / edited_profile_fields record exactly what a human changed.
+
+OWNERSHIP
+Every draft records owner_id — the educator who generated it. Only that
+educator can read, edit, rebuild or download it. Drafts created before
+login existed have no owner_id and are visible to nobody; remove them with
+scripts/cleanup_legacy.py.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
+import copy
 import json
 import logging
 from datetime import datetime, timezone
@@ -24,10 +45,26 @@ logger = logging.getLogger(__name__)
 DRAFTS_DIR = Path("./drafts")
 DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
 
-# The 14 editable NASET sections, in document order.
-# Used by both the API validator and the frontend editor.
+
+# ── Section 1: structured student fields ─────────────
+EDITABLE_PROFILE_FIELDS = [
+    ("student_name",        "Student Name"),
+    ("age",                 "Age"),
+    ("grade",               "Current Grade"),
+    ("school_name",         "School / Agency"),
+    ("disability_category", "Disability Category"),
+    ("disability_severity", "Severity"),
+    ("dominant_language",   "Dominant Language"),
+]
+PROFILE_KEYS = [k for k, _ in EDITABLE_PROFILE_FIELDS]
+
+SEVERITY_VALUES = ("Mild", "Moderate", "Severe")
+
+
+# ── Sections 2–11: prose written by the drafting agent ──
+# background_info is intentionally NOT here — its facts are edited through
+# the structured fields above, and the prose itself is not printed.
 EDITABLE_SECTIONS = [
-    ("background_info",                 "Section 1 — Background Information"),
     ("academic_performance",            "Section 2A — Academic / Educational Achievement"),
     ("social_development",              "Section 2B — Social Development"),
     ("physical_development",            "Section 2C — Physical Development"),
@@ -42,77 +79,116 @@ EDITABLE_SECTIONS = [
     ("recommendations_summary",         "Section 10 — Summary of Recommendations"),
     ("progress_reporting",              "Section 11 — Reporting Progress to Parents"),
 ]
-
 SECTION_KEYS = [k for k, _ in EDITABLE_SECTIONS]
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
 def _draft_path(iep_id: str) -> Path:
-    """Resolve the JSON path for an IEP id, guarding against traversal."""
+    """Resolve the JSON path for an IEP id, guarding against path traversal."""
     safe_id = "".join(c for c in str(iep_id) if c.isalnum() or c in "-_")
     if not safe_id:
         raise ValueError(f"Invalid iep_id: {iep_id!r}")
     return DRAFTS_DIR / f"{safe_id}.json"
 
 
-def _enum_safe(value):
-    """Convert enums (ComplianceStatus, WorkflowStatus) to plain strings."""
-    if hasattr(value, "value"):
-        return str(value.value)
-    if hasattr(value, "name"):
-        return str(value.name)
-    return value
-
-
 def _clean_for_json(obj):
-    """Recursively strip enums so the state can be JSON-serialised."""
+    """Recursively convert enums to plain strings so state serialises."""
     if isinstance(obj, dict):
         return {k: _clean_for_json(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_clean_for_json(v) for v in obj]
-    if hasattr(obj, "value") or hasattr(obj, "name"):
-        return _enum_safe(obj)
+    if hasattr(obj, "value"):
+        return str(obj.value)
+    if hasattr(obj, "name") and not isinstance(obj, (str, int, float, bool)):
+        return str(obj.name)
     return obj
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _write(iep_id: str, record: dict) -> None:
+    _draft_path(iep_id).write_text(
+        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _validate_profile_value(key: str, value) -> object:
+    """
+    Validate and normalise one structured field.
+    Raises ValueError with a human-readable message on bad input — the
+    router turns that into a 422 so the UI can show it.
+    """
+    text = "" if value is None else str(value).strip()
+
+    if key == "age":
+        try:
+            age = int(float(text))
+        except ValueError:
+            raise ValueError(f"Age must be a whole number, got '{text}'.")
+        if not 3 <= age <= 25:
+            raise ValueError(f"Age must be between 3 and 25, got {age}.")
+        return age
+
+    if key == "student_name" and not text:
+        raise ValueError("Student name cannot be empty.")
+
+    if key == "disability_severity" and text:
+        match = next((s for s in SEVERITY_VALUES if s.lower() == text.lower()), None)
+        if not match:
+            raise ValueError(f"Severity must be one of {', '.join(SEVERITY_VALUES)}.")
+        return match
+
+    if len(text) > 120:
+        raise ValueError(f"{key.replace('_', ' ').title()} is too long (max 120 characters).")
+
+    return text
+
+
+def _same(a, b) -> bool:
+    """Compare two field values as trimmed strings (so 11 == '11')."""
+    return str(a if a is not None else "").strip() == str(b if b is not None else "").strip()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def save_draft(state: dict, iep_id: str, pdf_path: str = "") -> str:
-    """
-    Persist everything generate_iep_pdf() needs to rebuild the document:
-      student_profile, drafted_iep, compliance_report.
-
-    Called automatically at the end of the pipeline run.
-    Returns the path written.
-    """
-    path = _draft_path(iep_id)
+def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[int] = None) -> str:
+    """Persist everything needed to rebuild the PDF. Called after the pipeline."""
+    profile = _clean_for_json(state.get("student_profile", {}))
+    drafted = _clean_for_json(state.get("drafted_iep", {}))
 
     record = {
         "iep_id":            iep_id,
-        "student_profile":   _clean_for_json(state.get("student_profile", {})),
-        "drafted_iep":       _clean_for_json(state.get("drafted_iep", {})),
+        "owner_id":          owner_id,
+        "student_profile":   profile,
+        "drafted_iep":       drafted,
         "compliance_report": _clean_for_json(state.get("compliance_report", {})),
 
         # Review metadata
-        "review_status":     "pending",   # pending | edited | approved
-        "reviewed_by":       "",
-        "review_notes":      "",
-        "edited_sections":   [],          # keys the human changed
-        "revision":          0,
+        "review_status":         "pending",   # pending | edited | approved
+        "reviewed_by":           "",
+        "review_notes":          "",
+        "edited_sections":       [],
+        "edited_profile_fields": [],
+        "revision":              0,
 
-        # Provenance — the ORIGINAL AI output, never overwritten.
-        # Lets the UI show a diff and lets you prove what the model produced.
-        "original_iep":      _clean_for_json(state.get("drafted_iep", {})),
+        # Provenance — the ORIGINAL AI output, never overwritten
+        "original_iep":     copy.deepcopy(drafted),
+        "original_profile": copy.deepcopy(profile),
 
-        "pdf_path":          pdf_path,
-        "created_at":        datetime.now(timezone.utc).isoformat(),
-        "updated_at":        datetime.now(timezone.utc).isoformat(),
+        "pdf_path":   pdf_path,
+        "created_at": _now(),
+        "updated_at": _now(),
     }
-
-    path.write_text(json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8")
-    logger.info(f"  💾 Draft saved for review: {path}")
-    return str(path)
+    _write(iep_id, record)
+    logger.info(f"  💾 Draft saved for review: {_draft_path(iep_id)}")
+    return str(_draft_path(iep_id))
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -120,31 +196,54 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "") -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_draft(iep_id: str) -> Optional[dict]:
-    """Return the stored draft record, or None if not found."""
     path = _draft_path(iep_id)
     if not path.exists():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        record = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         logger.error(f"Draft file corrupt for {iep_id}: {e}")
         return None
 
+    # Backfill fields for drafts created before profile editing existed
+    record.setdefault("original_profile", copy.deepcopy(record.get("student_profile", {})))
+    record.setdefault("edited_profile_fields", [])
+    return record
 
-def list_drafts(limit: int = 50) -> list:
+
+def load_owned_draft(iep_id: str, owner_id: int) -> Optional[dict]:
     """
-    Return summaries of stored drafts, newest first.
-    Used by the My IEPs / review queue view.
+    Return the draft only if it belongs to owner_id.
+
+    A draft owned by someone else is reported exactly like a missing draft
+    (None → 404). Returning "forbidden" instead would confirm that the IEP
+    exists, which is itself a leak.
     """
+    try:
+        record = load_draft(iep_id)
+    except ValueError:
+        return None
+    if record is None or record.get("owner_id") != owner_id:
+        return None
+    return record
+
+
+def list_drafts(owner_id: int, limit: int = 50) -> list:
+    """Drafts belonging to one educator, newest first."""
     out = []
     for p in DRAFTS_DIR.glob("*.json"):
         try:
             rec = json.loads(p.read_text(encoding="utf-8"))
         except Exception:
             continue
+        if rec.get("owner_id") != owner_id:
+            continue
+        profile = rec.get("student_profile", {})
         out.append({
-            "iep_id":        rec.get("iep_id", p.stem),
-            "student_name":  rec.get("student_profile", {}).get("student_name", "Unknown"),
+            "iep_id":              rec.get("iep_id", p.stem),
+            "student_name":        profile.get("student_name", "Unknown"),
+            "disability_category": profile.get("disability_category", ""),
+            "grade":               str(profile.get("grade", "") or ""),
             "review_status": rec.get("review_status", "pending"),
             "revision":      rec.get("revision", 0),
             "created_at":    rec.get("created_at", ""),
@@ -160,7 +259,9 @@ def list_drafts(limit: int = 50) -> list:
 
 def apply_edits(
     iep_id: str,
-    edited_sections: dict,
+    owner_id: int,
+    edited_sections: dict = None,
+    profile_edits: dict = None,
     reviewed_by: str = "",
     review_notes: str = "",
     approve: bool = False,
@@ -168,80 +269,90 @@ def apply_edits(
     """
     Merge human edits into the stored draft.
 
-    Only keys in SECTION_KEYS are accepted — anything else is ignored,
-    so a malformed request can't inject arbitrary fields into state.
+    - edited_sections : {section_key: text} for Sections 2–11
+    - profile_edits   : {profile_key: value} for Section 1 structured fields
 
-    Tracks WHICH sections the human changed (compared against the
-    original AI output) so the audit trail shows human vs machine authorship.
+    Unknown keys are ignored. All profile values are validated first; if any
+    is invalid, ValueError is raised and NOTHING is written — a half-applied
+    edit would leave the record inconsistent.
 
-    Returns the updated record, or None if the draft doesn't exist.
+    Returns the updated record, or None if the draft doesn't exist or
+    belongs to a different educator.
     """
-    record = load_draft(iep_id)
+    # Ownership is checked here as well as in the router — defence in depth,
+    # so a future endpoint that forgets the check still can't edit others' IEPs.
+    record = load_owned_draft(iep_id, owner_id)
     if record is None:
         return None
 
+    # ── Validate profile edits up-front (all-or-nothing) ──
+    validated_profile = {}
+    for key, value in (profile_edits or {}).items():
+        if key not in PROFILE_KEYS:
+            logger.warning(f"apply_edits: ignored unknown profile field '{key}'")
+            continue
+        validated_profile[key] = _validate_profile_value(key, value)
+
+    # ── Apply prose section edits ──
     drafted  = dict(record.get("drafted_iep", {}))
     original = record.get("original_iep", {})
-    changed  = set(record.get("edited_sections", []))
+    changed_sections = set(record.get("edited_sections", []))
 
-    rejected = []
     for key, value in (edited_sections or {}).items():
         if key not in SECTION_KEYS:
-            rejected.append(key)
+            logger.warning(f"apply_edits: ignored unknown section '{key}'")
             continue
-        if not isinstance(value, str):
-            value = str(value)
+        value = "" if value is None else str(value)
         drafted[key] = value
-        # Mark as human-edited only if it differs from the ORIGINAL AI text
-        if value.strip() != str(original.get(key, "")).strip():
-            changed.add(key)
+        if _same(value, original.get(key, "")):
+            changed_sections.discard(key)
         else:
-            changed.discard(key)
+            changed_sections.add(key)
 
-    if rejected:
-        logger.warning(f"apply_edits: ignored unknown section keys: {rejected}")
+    # ── Apply structured profile edits ──
+    profile          = dict(record.get("student_profile", {}))
+    original_profile = record.get("original_profile", {})
+    changed_profile  = set(record.get("edited_profile_fields", []))
 
-    record["drafted_iep"]     = drafted
-    record["edited_sections"] = sorted(changed)
-    record["revision"]        = record.get("revision", 0) + 1
-    record["updated_at"]      = datetime.now(timezone.utc).isoformat()
+    for key, value in validated_profile.items():
+        profile[key] = value
+        if _same(value, original_profile.get(key, "")):
+            changed_profile.discard(key)
+        else:
+            changed_profile.add(key)
 
+    record["drafted_iep"]           = drafted
+    record["student_profile"]       = profile
+    record["edited_sections"]       = sorted(changed_sections)
+    record["edited_profile_fields"] = sorted(changed_profile)
+    record["revision"]              = record.get("revision", 0) + 1
+    record["updated_at"]            = _now()
     if reviewed_by:
         record["reviewed_by"] = reviewed_by
     if review_notes:
         record["review_notes"] = review_notes
-
     record["review_status"] = "approved" if approve else "edited"
 
-    _draft_path(iep_id).write_text(
-        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    _write(iep_id, record)
     logger.info(
         f"  ✏️  Draft {iep_id} rev {record['revision']} — "
-        f"{len(changed)} section(s) human-edited, status={record['review_status']}"
+        f"{len(changed_sections)} section(s), {len(changed_profile)} student field(s) "
+        f"human-edited, status={record['review_status']}"
     )
     return record
 
 
 def set_pdf_path(iep_id: str, pdf_path: str) -> None:
-    """Record the regenerated PDF path against a draft."""
     record = load_draft(iep_id)
     if record is None:
         return
     record["pdf_path"]   = pdf_path
-    record["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _draft_path(iep_id).write_text(
-        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    record["updated_at"] = _now()
+    _write(iep_id, record)
 
 
 def to_pdf_state(record: dict) -> dict:
-    """
-    Rebuild the minimal state dict that generate_iep_pdf() expects.
-
-    generate_iep_pdf() reads:
-      student_id / iep_id, student_profile, drafted_iep, compliance_report
-    """
+    """Minimal state dict that generate_iep_pdf() expects."""
     return {
         "student_id":        record.get("iep_id", ""),
         "iep_id":            record.get("iep_id", ""),

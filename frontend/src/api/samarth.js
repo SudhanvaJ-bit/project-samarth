@@ -1,27 +1,102 @@
 import axios from 'axios'
 
-const api = axios.create({
-  baseURL: 'http://localhost:8000',
-  timeout: 600000, // 10 min — full pipeline runs ~3-5 min
-})
+/**
+ * API client for SAMARTH.
+ *
+ * AUTH
+ * After login the server returns a token. It is kept in localStorage so a
+ * page refresh doesn't log you out, and attached to every request as
+ * "Authorization: Bearer <token>".
+ *
+ * Trade-off worth knowing: localStorage can be read by any script running on
+ * the page, so a cross-site-scripting bug could steal the token. An
+ * httpOnly cookie avoids that but needs CSRF protection and cookie-aware
+ * CORS. For this project the token expires after 8 hours, which limits the
+ * damage; moving to cookies is the next hardening step.
+ */
 
-// A separate short-timeout client for review calls.
-// Editing and finalising make no LLM calls, so they should be fast —
-// a long timeout here would just hide a genuine failure.
-const reviewApi = axios.create({
-  baseURL: 'http://localhost:8000',
-  timeout: 60000, // 1 min
-})
+const BASE_URL = 'http://localhost:8000'
+const TOKEN_KEY = 'samarth_token'
+const USER_KEY  = 'samarth_user'
+
+// ── Session storage ───────────────────────────────────
+
+export const getToken = () => localStorage.getItem(TOKEN_KEY)
+
+export const getStoredUser = () => {
+  try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null') }
+  catch { return null }
+}
+
+export const setSession = (token, user) => {
+  localStorage.setItem(TOKEN_KEY, token)
+  localStorage.setItem(USER_KEY, JSON.stringify(user))
+}
+
+export const clearSession = () => {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(USER_KEY)
+  // Pre-login versions kept IEP history in the browser. With accounts, the
+  // server is the source of truth, so remove the old shared history.
+  localStorage.removeItem('samarth_iep_history')
+}
+
+// App.jsx registers a handler so any 401 (expired / revoked session)
+// sends the user back to the login screen.
+let onUnauthorized = null
+export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn }
+
+// ── Clients ───────────────────────────────────────────
+
+const api       = axios.create({ baseURL: BASE_URL, timeout: 600000 })  // pipeline: minutes
+const reviewApi = axios.create({ baseURL: BASE_URL, timeout: 60000 })   // no LLM calls
+
+for (const client of [api, reviewApi]) {
+  client.interceptors.request.use((config) => {
+    const token = getToken()
+    if (token) config.headers.Authorization = `Bearer ${token}`
+    return config
+  })
+
+  client.interceptors.response.use(
+    (res) => res,
+    (err) => {
+      const isLoginCall = err?.config?.url?.includes('/auth/login')
+      if (err?.response?.status === 401 && !isLoginCall) {
+        clearSession()
+        onUnauthorized?.()
+      }
+      return Promise.reject(err)
+    },
+  )
+}
+
+// ── Auth ──────────────────────────────────────────────
+
+/** OAuth2 login expects form fields named username/password. */
+export const login = async (email, password) => {
+  const form = new URLSearchParams()
+  form.append('username', email)
+  form.append('password', password)
+  const { data } = await reviewApi.post('/auth/login', form)
+  setSession(data.access_token, data.user)
+  return data.user
+}
+
+export const fetchMe = () => reviewApi.get('/auth/me')
+
+export const changePassword = (currentPassword, newPassword) =>
+  reviewApi.post('/auth/me/password', {
+    current_password: currentPassword,
+    new_password:     newPassword,
+  })
 
 // ── Generation ────────────────────────────────────────
 
-// Manual form entry → POST /iep/generate
 export const generateIEP = (studentData) =>
   api.post('/iep/generate', studentData)
 
-// PDF report upload → POST /iep/generate-from-report
-// NOTE: do NOT set Content-Type manually — axios must set it itself so the
-// multipart boundary parameter is included, otherwise FastAPI returns 422
+// Do NOT set Content-Type manually — axios must add the multipart boundary
 export const generateIEPFromReport = (pdfFile) => {
   const formData = new FormData()
   formData.append('file', pdfFile)
@@ -30,39 +105,32 @@ export const generateIEPFromReport = (pdfFile) => {
 
 // ── Human Review ──────────────────────────────────────
 
-// Review queue → GET /iep/drafts
 export const listDrafts = (limit = 50) =>
   reviewApi.get('/iep/drafts', { params: { limit } })
 
-// Load the 14 editable sections → GET /iep/{id}/draft
 export const getDraft = (iepId) =>
   reviewApi.get(`/iep/${iepId}/draft`)
 
-// Save edits without finalising → PUT /iep/{id}/draft
-// sections: { background_info: "...", annual_goals: "...", ... }
-export const saveDraft = (iepId, sections, opts = {}) =>
+/** Reviewer identity comes from the login — the server ignores any name sent. */
+export const saveDraft = (iepId, sections = {}, opts = {}) =>
   reviewApi.put(`/iep/${iepId}/draft`, {
     sections,
-    reviewed_by:  opts.reviewedBy  ?? '',
+    profile:      opts.profile     ?? {},
     review_notes: opts.reviewNotes ?? '',
     approve:      opts.approve     ?? false,
   })
 
-// Approve + rebuild PDF from edited content → POST /iep/{id}/finalize
-// Makes no LLM calls, so consumes no API quota.
 export const finalizeDraft = (iepId, sections = null, opts = {}) =>
   reviewApi.post(`/iep/${iepId}/finalize`, {
     sections,
-    reviewed_by:  opts.reviewedBy  ?? '',
+    profile:      opts.profile     ?? null,
     review_notes: opts.reviewNotes ?? '',
   })
 
-// ── Download ──────────────────────────────────────────
+// ── Download / health ─────────────────────────────────
 
 export const downloadIEP = (iepId) =>
   api.get(`/iep/${iepId}/download`, { responseType: 'blob' })
-
-// ── Health ────────────────────────────────────────────
 
 export const checkHealth = () =>
   reviewApi.get('/iep/health')

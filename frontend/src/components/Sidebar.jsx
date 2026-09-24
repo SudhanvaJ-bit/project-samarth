@@ -1,16 +1,23 @@
 import {
-  Brain, FilePlus, Files, Users, ChartLineUp, Gear, Sun, Moon, List
+  Brain, FilePlus, Files, Users, ChartLineUp, Gear, Sun, Moon, List,
+  PencilSimple, SignOut,
 } from '@phosphor-icons/react'
 
 const NAV = [
   { id: 'generate',  label: 'Generate IEP', Icon: FilePlus },
   { id: 'my-ieps',   label: 'My IEPs',       Icon: Files },
+  // Human Review — opens the section editor for the selected IEP.
+  // With nothing selected, App.jsx shows a "No IEP selected" placeholder.
+  { id: 'review',    label: 'Review',        Icon: PencilSimple },
   { id: 'students',  label: 'Students',       Icon: Users },
   { id: 'analytics', label: 'Analytics',      Icon: ChartLineUp },
   { id: 'settings',  label: 'Settings',       Icon: Gear },
 ]
 
-export default function Sidebar({ view, setView, collapsed, setCollapsed, theme, toggleTheme }) {
+const initials = (name = '') =>
+  name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('') || '?'
+
+export default function Sidebar({ view, setView, collapsed, setCollapsed, theme, toggleTheme, user, onLogout }) {
   return (
     <aside className={`sidebar ${collapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
@@ -43,16 +50,29 @@ export default function Sidebar({ view, setView, collapsed, setCollapsed, theme,
       <div className="sidebar-footer">
         <button className="menu-item profile-item"
           onClick={() => setView('profile')}
-          style={{ padding: 0, border: 'none', background: 'none', boxShadow: 'none' }}>
+          title={user?.email}
+          style={{ padding: 0, border: 'none', background: 'none', boxShadow: 'none', minWidth: 0 }}>
           <div className="profile-avatar">
-            <img src="https://ui-avatars.com/api/?name=Dr.+Smith&background=f8f8f9&color=050508" alt="Dr. Smith" />
+            <img
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(initials(user?.full_name))}&background=f8f8f9&color=050508`}
+              alt={user?.full_name || 'User'} />
           </div>
-          {!collapsed && <span>Dr. Smith</span>}
+          {!collapsed && (
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {user?.full_name || 'Signed in'}
+            </span>
+          )}
         </button>
-        <button className="btn-icon" onClick={toggleTheme}
-          style={{ borderRadius: '50%', padding: 8, border: 'none', flexShrink: 0 }}>
-          {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
-        </button>
+        <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+          <button className="btn-icon" onClick={toggleTheme} title="Toggle theme"
+            style={{ borderRadius: '50%', padding: 8, border: 'none' }}>
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+          <button className="btn-icon" onClick={onLogout} title="Sign out"
+            style={{ borderRadius: '50%', padding: 8, border: 'none' }}>
+            <SignOut size={18} />
+          </button>
+        </div>
       </div>
     </aside>
   )

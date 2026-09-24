@@ -23,16 +23,17 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 from agents.state import IEPState, ExtractedInsights, WorkflowStatus
+from agents.model_config import invoke_with_fallback
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
 # ── Gemini Client ─────────────────────────────────────
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash-lite",
-    temperature=0.2,
-    google_api_key=os.getenv("GOOGLE_API_KEY"),
-)
+#llm = ChatGoogleGenerativeAI(
+    #model="gemini-3.5-flash-lite",
+    #temperature=0.2,
+    #google_api_key=os.getenv("GOOGLE_API_KEY"),
+#)
 
 # ── System Prompt ─────────────────────────────────────
 SYSTEM_PROMPT = """You are a specialist educational psychologist AI 
@@ -181,7 +182,7 @@ def scraper_agent(state: IEPState) -> IEPState:
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=build_prompt(profile)),
         ]
-        response = llm.invoke(messages)
+        response = invoke_with_fallback("scraper", messages)
         raw_text = clean_json_response(response.content)   # [FIX 1]
 
         # ── Parse JSON ────────────────────────────────
