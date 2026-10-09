@@ -1,0 +1,13 @@
+# Store text files with LF line endings in the repository; Git converts
+# them to the platform's native endings on checkout. Without this, editing
+# on Windows makes every file look changed.
+* text=auto
+
+# Binary files — never touch line endings
+*.pdf     binary
+*.png     binary
+*.jpg     binary
+*.ico     binary
+*.sqlite3 binary
+*.db      binary
+*.bin     binary
