@@ -15,7 +15,17 @@ import axios from 'axios'
  * damage; moving to cookies is the next hardening step.
  */
 
-const BASE_URL = 'http://localhost:8000'
+/**
+ * WHERE THE BACKEND IS
+ * Read from VITE_API_URL at build time (frontend/.env.local for local runs,
+ * or the hosting dashboard's environment settings when deployed).
+ * Falls back to the local backend so `npm run dev` works with no setup.
+ *
+ * Vite copies VITE_* values into the JavaScript bundle that every visitor
+ * downloads — so this must only ever hold a public URL, never a secret.
+ */
+const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '')
+export const API_BASE_URL = BASE_URL   // shown in connection-error messages
 const TOKEN_KEY = 'samarth_token'
 const USER_KEY  = 'samarth_user'
 

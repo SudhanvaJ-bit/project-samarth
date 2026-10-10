@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Brain, SignIn, SpinnerGap, WarningCircle } from '@phosphor-icons/react'
-import { login } from '../api/samarth'
+import { login, API_BASE_URL } from '../api/samarth'
 
 /**
  * Login screen. There is no sign-up link on purpose: accounts are created
@@ -27,7 +27,7 @@ export default function LoginPage({ onLogin, notice }) {
       setError(
         err?.response?.status === 401
           ? 'Incorrect email or password.'
-          : (err?.response?.data?.detail ?? 'Could not reach the server. Is the backend running on port 8000?')
+          : (err?.response?.data?.detail ?? `Could not reach the server at ${API_BASE_URL}.`)
       )
     } finally {
       setBusy(false)

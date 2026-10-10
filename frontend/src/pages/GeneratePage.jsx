@@ -4,7 +4,7 @@ import {
   FilePdf, PencilSimple, TrendUp, WarningCircle, Pulse, Heart,
   Lightbulb, Paperclip, DownloadSimple, FileText, X,
 } from '@phosphor-icons/react'
-import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts } from '../api/samarth'
+import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts, API_BASE_URL } from '../api/samarth'
 
 const DISABILITIES = [
   'Dyslexia', 'Dysgraphia', 'Dyscalculia', 'Autism Spectrum Disorder', 'ADHD',
@@ -125,7 +125,7 @@ export default function GeneratePage({ showToast, openReview }) {
     } catch (err) {
       const msg = err?.response?.data?.detail
         ?? (err?.code === 'ECONNABORTED' ? 'Request timed out — backend may still be processing' : null)
-        ?? 'Generation failed. Is the backend running on port 8000?'
+        ?? `Generation failed — could not reach the server at ${API_BASE_URL}.`
       setError(msg)
     } finally {
       setLoading(false)

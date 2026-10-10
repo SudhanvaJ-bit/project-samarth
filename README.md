@@ -203,6 +203,8 @@ npm run dev
 
 Open http://localhost:5173 and sign in as an educator.
 
+The frontend talks to `http://localhost:8000` by default. To point it at another backend (for example a deployed one), copy `frontend/.env.example` to `frontend/.env.local` and set `VITE_API_URL`. This value is built into the public JavaScript, so it must never hold a secret. The backend must also list the frontend's address in `FRONTEND_ORIGINS`.
+
 API documentation is at http://localhost:8000/docs. Click **Authorize** and sign in with your email as the username to try authenticated endpoints.
 
 ---
