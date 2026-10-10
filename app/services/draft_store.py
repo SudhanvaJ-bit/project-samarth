@@ -112,7 +112,12 @@ def _now() -> str:
 
 
 def _write(iep_id: str, record: dict) -> None:
-    _draft_path(iep_id).write_text(
+    path = _draft_path(iep_id)
+    # Create the folder on every write, not only at import: if drafts/ is
+    # deleted while the server runs, or the server is started from another
+    # folder, saving must still work.
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
         json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 

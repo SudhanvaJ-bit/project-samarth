@@ -1,20 +1,18 @@
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from unittest.mock import patch, MagicMock
-from fastapi.testclient import TestClient
-from agents.state import WorkflowStatus, ComplianceStatus
+"""
+tests/test_api.py
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+API tests — fast, offline, no Gemini calls.
 
-def make_mock_final_state(iep_id: str):
-    return {
-        "workflow_status":   WorkflowStatus.COMPLETED,
-        "compliance_report": {"status": ComplianceStatus.PARTIAL},
-        "pdf_output_path":   f"outputs/IEP_Test_{iep_id[:8]}.pdf",
-        "generated_at":      "2026-01-01T00:00:00+00:00",
-        "error_log":         [],
-        "drafted_iep":       {"background_info": "Test IEP"},
-    }
+The AI pipeline is replaced by a stand-in (see conftest.py), so these tests
+check everything AROUND the AI: login, who can see what, the review
+workflow, and the PDF download. Each test gets its own empty database and
+folder.
 
+Run:  pytest tests/test_api.py -v
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+"""
+
+import pytest
 
 VALID_PAYLOAD = {
     "student_name":         "Arjun Sharma",
@@ -23,140 +21,376 @@ VALID_PAYLOAD = {
     "school_name":          "Delhi Public School, Bengaluru",
     "disability_category":  "Dyslexia",
     "disability_severity":  "moderate",
-    "raw_notes":            (
-        "Arjun struggles with reading and written expression. "
-        "He reverses letters and has difficulty with comprehension. "
-        "He excels in oral discussions and mathematics."
+    "raw_notes": (
+        "Arjun struggles with reading and written expression. He reverses "
+        "letters like b/d. He excels in oral discussions."
     ),
-    "academic_history":     "Grade 3: 62% overall",
-    "teacher_observations": "Engaged in group work, struggles with writing",
-    "parent_concerns":      "Gets frustrated with reading tasks at home",
+    "academic_history":     "Grade 2: 58%, Grade 3: 62%",
+    "teacher_observations": "Loses focus during reading.",
+    "parent_concerns":      "Gets frustrated with reading at home.",
 }
 
 
-def get_test_client():
-    """Create TestClient with mocked pipeline."""
-    from app.main import app
-    return TestClient(app)
+def generate(client, headers, **overrides):
+    """Generate an IEP and return its id."""
+    r = client.post("/iep/generate", json={**VALID_PAYLOAD, **overrides}, headers=headers)
+    assert r.status_code == 201, r.text
+    return r.json()["iep_id"]
 
 
-def test_root_endpoint():
-    """GET / returns project info."""
-    print("\n🌐 Test 1: Root endpoint...")
-    client = get_test_client()
+# ═════════════════════════════════════════════════════════════════════════
+# Public endpoints
+# ═════════════════════════════════════════════════════════════════════════
 
-    response = client.get("/")
-    assert response.status_code == 200
-
-    data = response.json()
-    assert data["project"]    == "Project SAMARTH"
-    assert data["version"]    == "1.0.0"
-    assert "generate"         in data["endpoints"]
-    print(f"  ✅ Status: {response.status_code}")
-    print(f"  ✅ Project: {data['project']} v{data['version']}")
+def test_root(client):
+    r = client.get("/")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["project"] == "Project SAMARTH"
+    assert data["version"] == "1.1.0"
 
 
-def test_health_endpoint():
-    """GET /iep/health returns ok."""
-    print("\n🌐 Test 2: Health endpoint...")
-    client = get_test_client()
-
-    response = client.get("/iep/health")
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
-    print(f"  ✅ Health: {response.json()}")
+def test_health_is_public(client):
+    r = client.get("/iep/health")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["status"] == "ok"
+    # The public health check must not reveal anything about stored IEPs
+    assert "drafts" not in data and "ieps" not in data
 
 
-def test_generate_iep_success():
-    """POST /iep/generate returns 201 with mocked pipeline."""
-    print("\n🌐 Test 3: Generate IEP (mocked pipeline)...")
-    client = get_test_client()
-
-    with patch("app.routers.iep.run_iep_pipeline") as mock_pipeline:
-        mock_pipeline.return_value = make_mock_final_state("test-1234-5678")
-
-        response = client.post("/iep/generate", json=VALID_PAYLOAD)
-
-        assert response.status_code == 201, \
-            f"Expected 201, got {response.status_code}: {response.text}"
-
-        data = response.json()
-        assert data["student_name"]    == "Arjun Sharma"
-        assert data["workflow_status"] == "WorkflowStatus.COMPLETED"
-        assert data["iep_id"]          is not None
-        assert "download" in data["message"]
-
-        print(f"  ✅ Status code    : {response.status_code}")
-        print(f"  ✅ IEP ID         : {data['iep_id']}")
-        print(f"  ✅ Student        : {data['student_name']}")
-        print(f"  ✅ Workflow status: {data['workflow_status']}")
-        print(f"  ✅ Message        : {data['message'][:60]}...")
+def test_docs_available(client):
+    assert client.get("/docs").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
 
 
-def test_generate_iep_missing_fields():
-    """POST /iep/generate returns 422 on missing required fields."""
-    print("\n🌐 Test 4: Missing required fields...")
-    client = get_test_client()
+# ═════════════════════════════════════════════════════════════════════════
+# Login
+# ═════════════════════════════════════════════════════════════════════════
 
-    bad_payload = {"student_name": "Test"}
-    response    = client.post("/iep/generate", json=bad_payload)
-
-    assert response.status_code == 422
-    print(f"  ✅ Correctly rejected: {response.status_code} Unprocessable Entity")
-
-
-def test_generate_iep_short_notes():
-    """POST /iep/generate returns 422 when raw_notes too short."""
-    print("\n🌐 Test 5: Notes too short...")
-    client = get_test_client()
-
-    short_payload = {**VALID_PAYLOAD, "raw_notes": "Too short"}
-    response      = client.post("/iep/generate", json=short_payload)
-
-    assert response.status_code == 422
-    print(f"  ✅ Correctly rejected: notes too short → {response.status_code}")
+def test_login_success(client, make_user):
+    make_user("teacher@school.test")
+    r = client.post("/auth/login",
+                    data={"username": "Teacher@School.test", "password": "correct-horse-battery"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["token_type"] == "bearer"
+    assert data["access_token"]
+    assert data["user"]["email"] == "teacher@school.test"    # email is normalised
+    assert "password_hash" not in data["user"]
 
 
-def test_download_not_found():
-    """GET /iep/{id}/download returns 404 for unknown ID."""
-    print("\n🌐 Test 6: Download unknown IEP...")
-    client = get_test_client()
-
-    response = client.get("/iep/nonexistent-id-xyz/download")
-    assert response.status_code == 404
-    print(f"  ✅ Correctly returned: {response.status_code} Not Found")
-
-
-def test_invalid_disability_category():
-    """POST /iep/generate returns 422 for unknown disability."""
-    print("\n🌐 Test 7: Invalid disability category...")
-    client = get_test_client()
-
-    bad_payload = {**VALID_PAYLOAD, "disability_category": "InvalidDisease"}
-    response    = client.post("/iep/generate", json=bad_payload)
-
-    assert response.status_code == 422
-    print(f"  ✅ Correctly rejected: {response.status_code}")
+@pytest.mark.parametrize("email,password", [
+    ("teacher@school.test", "wrong-password"),     # wrong password
+    ("nobody@school.test",  "correct-horse-battery"),  # no such account
+    ("not-an-email",        "correct-horse-battery"),  # malformed email
+])
+def test_login_failures_look_identical(client, make_user, email, password):
+    make_user("teacher@school.test")
+    r = client.post("/auth/login", data={"username": email, "password": password})
+    assert r.status_code == 401
+    # Same message every time, so an attacker can't tell which part was wrong
+    assert r.json()["detail"] == "Incorrect email or password."
 
 
-def test_docs_available():
-    """GET /docs returns Swagger UI."""
-    print("\n🌐 Test 8: Swagger docs available...")
-    client = get_test_client()
-
-    response = client.get("/docs")
-    assert response.status_code == 200
-    print(f"  ✅ Swagger UI available at /docs")
+def test_me(client, educator):
+    r = client.get("/auth/me", headers=educator)
+    assert r.status_code == 200
+    assert r.json()["email"] == "teacher@school.test"
+    assert r.json()["role"] == "educator"
 
 
-if __name__ == "__main__":
-    print("\n🧪 Running FastAPI Tests...\n")
-    test_root_endpoint()
-    test_health_endpoint()
-    test_generate_iep_success()
-    test_generate_iep_missing_fields()
-    test_generate_iep_short_notes()
-    test_download_not_found()
-    test_invalid_disability_category()
-    test_docs_available()
-    print("\n🎉 ALL API TESTS PASSED — Step 10 Complete!\n")
+@pytest.mark.parametrize("headers", [
+    {},                                              # no token
+    {"Authorization": "Bearer not-a-real-token"},    # forged token
+])
+def test_me_rejects_missing_or_bad_token(client, headers):
+    assert client.get("/auth/me", headers=headers).status_code == 401
+
+
+@pytest.mark.parametrize("method,path", [
+    ("post", "/iep/generate"),
+    ("get",  "/iep/drafts"),
+    ("get",  "/iep/some-id/draft"),
+    ("put",  "/iep/some-id/draft"),
+    ("post", "/iep/some-id/finalize"),
+    ("get",  "/iep/some-id/download"),
+])
+def test_iep_endpoints_require_login(client, method, path):
+    r = getattr(client, method)(path)
+    assert r.status_code == 401
+
+
+def test_change_password(client, educator):
+    r = client.post("/auth/me/password", headers=educator,
+                    json={"current_password": "wrong", "new_password": "brand-new-pass"})
+    assert r.status_code == 400
+
+    r = client.post("/auth/me/password", headers=educator,
+                    json={"current_password": "correct-horse-battery", "new_password": "short"})
+    assert r.status_code == 400
+
+    r = client.post("/auth/me/password", headers=educator,
+                    json={"current_password": "correct-horse-battery",
+                          "new_password": "brand-new-pass"})
+    assert r.status_code == 200
+
+    old = client.post("/auth/login", data={"username": "teacher@school.test",
+                                           "password": "correct-horse-battery"})
+    new = client.post("/auth/login", data={"username": "teacher@school.test",
+                                           "password": "brand-new-pass"})
+    assert old.status_code == 401
+    assert new.status_code == 200
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Roles: admins manage accounts, educators manage IEPs
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_admin_cannot_read_ieps(client, admin):
+    # Least privilege: account management does not need children's records
+    assert client.get("/iep/drafts", headers=admin).status_code == 403
+    r = client.post("/iep/generate", json=VALID_PAYLOAD, headers=admin)
+    assert r.status_code == 403
+
+
+def test_educator_cannot_manage_accounts(client, educator):
+    assert client.get("/auth/users", headers=educator).status_code == 403
+    r = client.post("/auth/users", headers=educator,
+                    json={"email": "x@school.test", "full_name": "X", "password": "password123"})
+    assert r.status_code == 403
+
+
+def test_admin_creates_and_lists_accounts(client, admin):
+    r = client.post("/auth/users", headers=admin,
+                    json={"email": "new@school.test", "full_name": "New Teacher",
+                          "password": "password123"})
+    assert r.status_code == 201
+    assert r.json()["role"] == "educator"
+    assert "password_hash" not in r.json()
+
+    emails = [u["email"] for u in client.get("/auth/users", headers=admin).json()]
+    assert "new@school.test" in emails
+
+    # The new account can log in
+    r = client.post("/auth/login", data={"username": "new@school.test", "password": "password123"})
+    assert r.status_code == 200
+
+
+@pytest.mark.parametrize("body,status", [
+    ({"email": "admin@school.test", "full_name": "Dup", "password": "password123"}, 409),
+    ({"email": "a@school.test", "full_name": "Short", "password": "short"},         400),
+    ({"email": "b@school.test", "full_name": "Bad", "password": "password123",
+      "role": "superuser"},                                                          400),
+    ({"email": "not-an-email", "full_name": "Bad", "password": "password123"},      400),
+])
+def test_admin_create_user_validation(client, admin, body, status):
+    assert client.post("/auth/users", headers=admin, json=body).status_code == status
+
+
+def test_deactivation_takes_effect_immediately(client, admin, make_user, login):
+    user = make_user("leaver@school.test")
+    token = login("leaver@school.test")
+    assert client.get("/iep/drafts", headers=token).status_code == 200
+
+    r = client.patch(f"/auth/users/{user.id}", headers=admin, json={"is_active": False})
+    assert r.status_code == 200
+    assert r.json()["is_active"] is False
+
+    # The token they already hold stops working at once, not when it expires
+    assert client.get("/iep/drafts", headers=token).status_code == 401
+    # And they can no longer log in
+    r = client.post("/auth/login", data={"username": "leaver@school.test",
+                                         "password": "correct-horse-battery"})
+    assert r.status_code == 401
+
+
+def test_admin_cannot_deactivate_self(client, admin):
+    me = client.get("/auth/me", headers=admin).json()
+    r = client.patch(f"/auth/users/{me['id']}", headers=admin, json={"is_active": False})
+    assert r.status_code == 400
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Generating an IEP
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_generate_success(client, educator, fake_pipeline):
+    r = client.post("/iep/generate", json=VALID_PAYLOAD, headers=educator)
+    assert r.status_code == 201, r.text
+    data = r.json()
+    assert data["student_name"] == "Arjun Sharma"
+    assert data["workflow_status"] == "Completed"
+    assert data["compliance_status"] == "Partial"
+    assert data["pdf_output_path"]
+    assert data["errors"] == []
+    assert "Review" in data["message"]
+
+    # The pipeline received the form data unchanged
+    assert fake_pipeline[0]["disability_category"] == "Dyslexia"
+    assert fake_pipeline[0]["disability_severity"] == "moderate"
+
+    # It now appears in the educator's list
+    drafts = client.get("/iep/drafts", headers=educator).json()["drafts"]
+    assert [d["iep_id"] for d in drafts] == [data["iep_id"]]
+    assert drafts[0]["review_status"] == "pending"
+
+
+def test_generate_writes_only_inside_test_folder(client, educator, fake_pipeline, workdir):
+    iep_id = generate(client, educator)
+    assert (workdir / "drafts" / f"{iep_id}.json").is_file()
+    assert any((workdir / "outputs").glob("IEP_*.pdf"))
+
+
+@pytest.mark.parametrize("change", [
+    {"student_name": None},                     # required field missing
+    {"raw_notes": "Too short."},                # notes under 50 characters
+    {"disability_category": "Not A Category"},  # not in the RPwD list
+    {"age": 2},                                 # below 3
+    {"age": 30},                                # above 25
+])
+def test_generate_rejects_bad_input(client, educator, fake_pipeline, change):
+    payload = {**VALID_PAYLOAD, **change}
+    payload = {k: v for k, v in payload.items() if v is not None}
+    r = client.post("/iep/generate", json=payload, headers=educator)
+    assert r.status_code == 422
+    assert fake_pipeline == []          # rejected before any AI call
+
+
+def test_generate_from_report_rejects_non_pdf(client, educator):
+    r = client.post("/iep/generate-from-report", headers=educator,
+                    files={"file": ("notes.txt", b"hello", "text/plain")})
+    assert r.status_code == 400
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Ownership: another educator's IEP behaves as if it doesn't exist
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_other_educator_sees_404_everywhere(client, educator, other_educator, fake_pipeline):
+    iep_id = generate(client, educator)
+
+    assert client.get("/iep/drafts", headers=other_educator).json()["drafts"] == []
+    assert client.get(f"/iep/{iep_id}/draft", headers=other_educator).status_code == 404
+    assert client.get(f"/iep/{iep_id}/download", headers=other_educator).status_code == 404
+    r = client.put(f"/iep/{iep_id}/draft", headers=other_educator,
+                   json={"sections": {"annual_goals": "Hijacked"}})
+    assert r.status_code == 404
+    assert client.post(f"/iep/{iep_id}/finalize", headers=other_educator).status_code == 404
+
+    # 404, not 403 — and the same answer as for an id that never existed
+    missing = client.get("/iep/00000000-0000-0000-0000-000000000000/draft",
+                         headers=other_educator)
+    assert missing.status_code == 404
+
+    # The owner's IEP was not changed by any of this
+    sections = client.get(f"/iep/{iep_id}/draft", headers=educator).json()["sections"]
+    goals = next(s for s in sections if s["key"] == "annual_goals")
+    assert goals["content"] != "Hijacked"
+
+
+def test_path_traversal_id_is_404(client, educator):
+    assert client.get("/iep/..%2F..%2Fsecret/draft", headers=educator).status_code == 404
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Human review
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_review_draft_shape(client, educator, fake_pipeline):
+    iep_id = generate(client, educator)
+    r = client.get(f"/iep/{iep_id}/draft", headers=educator)
+    assert r.status_code == 200
+    data = r.json()
+
+    assert data["review_status"] == "pending"
+    assert data["revision"] == 0
+    assert len(data["student"]) == 7          # Section 1 structured fields
+    assert len(data["sections"]) == 13        # Sections 2–11 prose
+    name = next(f for f in data["student"] if f["key"] == "student_name")
+    assert name["value"] == "Arjun Sharma"
+    assert name["human_edited"] is False
+    assert set(data["severity_options"]) == {"Mild", "Moderate", "Severe"}
+
+
+def test_edit_records_who_and_what(client, educator, fake_pipeline):
+    iep_id = generate(client, educator)
+    r = client.put(f"/iep/{iep_id}/draft", headers=educator, json={
+        "sections": {"annual_goals": "Teacher-written goals."},
+        "profile":  {"grade": "Grade 5"},
+        "review_notes": "Checked with parents.",
+        "reviewed_by": "Someone Else",          # ignored: identity comes from login
+    })
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["review_status"] == "edited"
+    assert data["revision"] == 1
+    assert data["edited_sections"] == ["annual_goals"]
+    assert data["edited_profile_fields"] == ["grade"]
+    assert data["reviewed_by"] == "Asha Teacher (teacher@school.test)"
+
+    # The original AI text is kept for comparison
+    draft = client.get(f"/iep/{iep_id}/draft", headers=educator).json()
+    goals = next(s for s in draft["sections"] if s["key"] == "annual_goals")
+    assert goals["content"] == "Teacher-written goals."
+    assert goals["original"].startswith("AI draft of")
+    assert goals["human_edited"] is True
+
+
+def test_reverting_an_edit_clears_the_flag(client, educator, fake_pipeline):
+    iep_id = generate(client, educator)
+    draft = client.get(f"/iep/{iep_id}/draft", headers=educator).json()
+    original = next(s for s in draft["sections"] if s["key"] == "annual_goals")["original"]
+
+    client.put(f"/iep/{iep_id}/draft", headers=educator,
+               json={"sections": {"annual_goals": "Changed."}})
+    r = client.put(f"/iep/{iep_id}/draft", headers=educator,
+                   json={"sections": {"annual_goals": original}})
+    assert r.json()["edited_sections"] == []
+
+
+@pytest.mark.parametrize("profile", [
+    {"age": "eleven"},
+    {"age": 40},
+    {"student_name": "   "},
+    {"disability_severity": "Extreme"},
+])
+def test_invalid_profile_edit_saves_nothing(client, educator, fake_pipeline, profile):
+    iep_id = generate(client, educator)
+    r = client.put(f"/iep/{iep_id}/draft", headers=educator, json={
+        "sections": {"annual_goals": "This must NOT be saved either."},
+        "profile":  profile,
+    })
+    assert r.status_code == 422
+
+    # All-or-nothing: the valid section edit in the same request was not applied
+    draft = client.get(f"/iep/{iep_id}/draft", headers=educator).json()
+    assert draft["revision"] == 0
+    goals = next(s for s in draft["sections"] if s["key"] == "annual_goals")
+    assert goals["human_edited"] is False
+
+
+def test_finalize_and_download(client, educator, fake_pipeline):
+    iep_id = generate(client, educator)
+    r = client.post(f"/iep/{iep_id}/finalize", headers=educator,
+                    json={"profile": {"grade": "Grade 5"}})
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["review_status"] == "approved"
+    assert data["download_url"] == f"/iep/{iep_id}/download"
+
+    r = client.get(f"/iep/{iep_id}/download", headers=educator)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF")
+
+    drafts = client.get("/iep/drafts", headers=educator).json()["drafts"]
+    assert drafts[0]["review_status"] == "approved"
+    assert drafts[0]["grade"] == "Grade 5"
+
+
+def test_download_missing_pdf_is_404(client, educator, fake_pipeline, workdir):
+    iep_id = generate(client, educator)
+    for pdf in (workdir / "outputs").glob("*.pdf"):
+        pdf.unlink()
+    assert client.get(f"/iep/{iep_id}/download", headers=educator).status_code == 404

@@ -227,51 +227,8 @@ def test_pipeline_rejects_invalid_input():
     print(f"  ✅ Invalid input rejected: {state['error_log'][0]}")
 
 
-def test_api_endpoints():
-    """FastAPI endpoints work end-to-end."""
-    print("\n🔗 Integration Test 6: FastAPI endpoints...")
-
-    from unittest.mock      import patch
-    from fastapi.testclient import TestClient
-    from app.main           import app
-
-    client = TestClient(app)
-
-    # Health check
-    r = client.get("/iep/health")
-    assert r.status_code == 200
-    print(f"  ✅ GET /iep/health → {r.status_code}")
-
-    # Root
-    r = client.get("/")
-    assert r.status_code == 200
-    assert r.json()["project"] == "Project SAMARTH"
-    print(f"  ✅ GET / → {r.status_code}")
-
-    # Generate IEP (mocked)
-    with patch("app.routers.iep.run_iep_pipeline") as mock:
-        mock.return_value = {
-            "workflow_status":   WorkflowStatus.COMPLETED,
-            "compliance_report": {"status": ComplianceStatus.PARTIAL},
-            "pdf_output_path":   "outputs/IEP_Test_mock0000.pdf",
-            "generated_at":      "2026-01-01T00:00:00+00:00",
-            "error_log":         [],
-        }
-        payload = {
-            "student_name":        "Test Student",
-            "age":                 10,
-            "grade":               "Grade 4",
-            "school_name":         "Test School",
-            "disability_category": "Dyslexia",
-            "disability_severity": "mild",
-            "raw_notes":           "A" * 60,
-        }
-        r = client.post("/iep/generate", json=payload)
-        assert r.status_code == 201
-        data = r.json()
-        assert data["workflow_status"] == "WorkflowStatus.COMPLETED"
-        print(f"  ✅ POST /iep/generate → {r.status_code}")
-        print(f"  ✅ IEP ID generated: {data['iep_id']}")
+# The API (login, ownership, review, download) is tested in tests/test_api.py
+# with a stand-in pipeline, so it runs fast and offline.
 
 
 if __name__ == "__main__":
@@ -285,7 +242,6 @@ if __name__ == "__main__":
     start_all = time.time()
 
     test_pipeline_rejects_invalid_input()  # Quick — no API
-    test_api_endpoints()                   # Quick — mocked
 
     test_dyslexia_pipeline()               # ~90s — real API
     test_asd_pipeline()                    # ~90s — real API
