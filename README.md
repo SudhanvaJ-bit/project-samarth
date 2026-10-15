@@ -96,7 +96,7 @@ SAMARTH/
 │   ├── scraper_agent.py
 │   ├── compliance_agent.py
 │   ├── drafting_agent.py
-│   └── model_config.py       # Model chains, fallback, record/replay
+│   └── model_config.py       # Model chains, fallback, record/replay/demo
 ├── app/
 │   ├── main.py               # FastAPI app
 │   ├── db.py                 # User table, database setup
@@ -106,6 +106,7 @@ SAMARTH/
 │   │   └── iep.py            # Generation and review endpoints
 │   └── services/
 │       ├── auth.py           # Hashing, tokens, access control
+│       ├── demo.py           # Online-demo samples and shared account
 │       ├── draft_store.py    # Draft persistence and audit trail
 │       └── report_extractor.py
 ├── rag/
@@ -118,9 +119,15 @@ SAMARTH/
 ├── models/
 │   └── student.py
 ├── scripts/
-│   └── cleanup_legacy.py
+│   ├── cleanup_legacy.py
+│   └── record_demo.py        # Records and verifies the online demo
+├── demo/                     # Online-demo pack: samples, recordings, index copy
+├── tests/                    # pytest suite (offline by default)
 ├── frontend/                 # React app
+├── Dockerfile                # Website + API in one image (demo mode)
+├── render.yaml               # Render deployment blueprint
 ├── requirements.txt
+├── requirements-deploy.txt   # Server dependencies only
 └── .env.example
 ```
 
@@ -162,12 +169,13 @@ cp .env.example .env
 | `GOOGLE_API_KEY` | Yes | Gemini API key |
 | `JWT_SECRET` | Yes | Long random string used to sign login tokens. Generate one with `python -c "import secrets; print(secrets.token_urlsafe(48))"` |
 | `JWT_EXPIRE_MINUTES` | No | Session length, default `480` (8 hours) |
-| `SAMARTH_LLM_MODE` | No | `live` (default) or `replay` |
+| `SAMARTH_LLM_MODE` | No | `live` (default), `replay`, or `demo` (replay only, no API key; see [Online demo](#online-demo)) |
 | `DATABASE_URL` | No | Defaults to `sqlite:///./samarth.db`. Set a PostgreSQL URL to switch databases |
 | `FRONTEND_ORIGINS` | No | Comma-separated origins allowed by CORS, default `http://localhost:5173` |
-| `CHROMA_PERSIST_PATH` | No | Where the vector index is stored, default `./chroma_db` |
 
 Never commit `.env`. It is listed in `.gitignore`.
+
+The legal search index is always stored in `rag/chroma_db/`; it is not configurable.
 
 ### 3. Build the legal search index
 
@@ -235,6 +243,7 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 | `POST` | `/iep/{id}/finalize` | Approve and rebuild the PDF |
 | `GET` | `/iep/{id}/download` | Download the PDF |
 | `GET` | `/iep/health` | Health check *(public)* |
+| `GET` | `/demo` | Online-demo login and sample students; `{"enabled": false}` otherwise *(public)* |
 
 All `/iep` endpoints except `/iep/health` require an educator account.
 
@@ -244,6 +253,8 @@ All `/iep` endpoints except `/iep/health` require an educator account.
 
 **Replay mode.** Set `SAMARTH_LLM_MODE=replay` to reuse recorded model responses for identical prompts. The first run of any prompt calls the model and records the result in `.llm_recordings/`; later runs replay it instantly. Changing a prompt automatically produces a fresh recording. Use `live` mode when testing prompt changes or evaluating output quality.
 
+**Tests.** `pytest` runs the offline suite in under a minute: API, login and ownership rules, review workflow, demo mode. It uses a throwaway database and folders, never your real data. `pytest --live` also runs the tests that call Gemini.
+
 **Extraction cache.** Uploading the same PDF twice reuses the cached extraction in `.extraction_cache/`. Delete that folder to force a fresh extraction.
 
 **Removing pre-authentication data.** IEPs created before accounts existed have no owner and are visible to no one. Preview and remove them with:
@@ -252,6 +263,31 @@ All `/iep` endpoints except `/iep/health` require an educator account.
 python scripts/cleanup_legacy.py            # preview
 python scripts/cleanup_legacy.py --delete   # delete
 ```
+
+---
+
+## Online demo
+
+The public demo runs the whole pipeline **without a Gemini API key**. The server runs with `SAMARTH_LLM_MODE=demo`, which replays a recorded run of each sample student in [`demo/`](demo/README.md) and never calls the model. Every request is answered from those recordings, including the legal-document search. The date is frozen to the recording day so that date-dependent prompts still match.
+
+What a visitor can do: sign in with the shared demo account shown on the login page, load a sample student, generate, review, edit, finalize and download the IEP. What the demo blocks: new or edited students, PDF upload (so no one uploads a real child's report), and password changes.
+
+**Record or refresh the demo** after any change to prompts, agents or samples. Uses your API key, about a minute per sample:
+
+```bash
+python scripts/record_demo.py
+```
+
+It records each sample, then replays all of them in a separate process with the key removed. Only samples that pass are offered on the website.
+
+**Run the demo locally** exactly as deployed:
+
+```bash
+docker build -t samarth-demo .
+docker run -p 8000:8000 samarth-demo     # http://localhost:8000
+```
+
+**Deploy on Render.** In the Render dashboard choose **New → Blueprint** and select this repository. `render.yaml` creates one free web service from the `Dockerfile`, which serves both the website and the API. Pushing to `main` redeploys. Free instances sleep after a period of inactivity, so the first visit can take a minute, and demo records reset when the instance restarts.
 
 ---
 
@@ -294,9 +330,9 @@ This calls the Gemini API for every profile, so it uses quota.
 - [x] Authentication and per-educator access control
 - [x] Model fallback and record/replay
 - [ ] Systematic evaluation against single-prompt baselines
-- [ ] Configurable frontend API URL for deployment
+- [x] Configurable frontend API URL for deployment
+- [x] Containerised deployment with a keyless online demo
 - [ ] PostgreSQL for drafts as well as accounts
-- [ ] Containerised deployment
 - [ ] State- and board-specific accommodation rules
 
 ---

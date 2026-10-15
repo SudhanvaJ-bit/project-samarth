@@ -4,7 +4,7 @@ import {
   FilePdf, PencilSimple, TrendUp, WarningCircle, Pulse, Heart,
   Lightbulb, Paperclip, DownloadSimple, FileText, X,
 } from '@phosphor-icons/react'
-import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts, API_BASE_URL } from '../api/samarth'
+import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts, getDemoInfo, API_BASE_URL } from '../api/samarth'
 
 const DISABILITIES = [
   'Dyslexia', 'Dysgraphia', 'Dyscalculia', 'Autism Spectrum Disorder', 'ADHD',
@@ -69,6 +69,33 @@ export default function GeneratePage({ showToast, openReview }) {
   const [notifs, setNotifs]             = useState(NOTIFICATIONS)
   // Counters come from the server — the signed-in educator's IEPs only
   const [drafts, setDrafts]             = useState([])
+
+  // Online demo only: recorded sample students (null on a normal server)
+  const [demo, setDemo]                 = useState(null)
+  const [sampleId, setSampleId]         = useState('')
+
+  useEffect(() => {
+    getDemoInfo()
+      .then(({ data }) => { if (data?.enabled) setDemo(data) })
+      .catch(() => { /* normal server or unreachable — no demo controls */ })
+  }, [])
+
+  const loadSample = (id) => {
+    setSampleId(id)
+    const sample = demo?.samples?.find(s => s.id === id)
+    if (!sample) return
+    // Copy every field exactly — the demo replays only unedited samples
+    setForm({
+      student_name: '', age: '', grade: '', school_name: '',
+      disability_category: '', disability_severity: 'moderate',
+      raw_notes: '', academic_history: '', teacher_observations: '', parent_concerns: '',
+      ...sample.student,
+    })
+    setErrors({})
+    setError(null)
+    setResult(null)
+    setAttachedFile(null)
+  }
 
   const fileRef = useRef()
 
@@ -236,6 +263,25 @@ export default function GeneratePage({ showToast, openReview }) {
             <div className="card-header"><h3>Student Details</h3></div>
             <div className="modern-form">
 
+              {demo && (
+                <div className="form-group" style={{
+                  background: 'rgba(20,184,166,0.08)', border: '1px solid rgba(20,184,166,0.35)',
+                  borderRadius: 10, padding: 12,
+                }}>
+                  <label htmlFor="demo-sample">Load a sample student</label>
+                  <select id="demo-sample" value={sampleId}
+                    onChange={e => loadSample(e.target.value)}>
+                    <option value="">Choose a sample…</option>
+                    {demo.samples.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+                  </select>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                    Online demo: these synthetic students replay a real recorded run of the
+                    full pipeline, so they generate in seconds. Edited or new students
+                    need the live version.
+                  </span>
+                </div>
+              )}
+
               <div className="form-group">
                 <label>Student Name</label>
                 <input className={inpClass('student_name')} type="text"
@@ -320,7 +366,7 @@ export default function GeneratePage({ showToast, openReview }) {
                     }
                   }} />
 
-                <button type="button" className="btn btn-secondary"
+                {!demo && <button type="button" className="btn btn-secondary"
                   onClick={() => fileRef.current.click()}
                   style={attachedFile
                     ? { borderColor: 'var(--sage-green)', color: 'var(--sage-green)' }
@@ -329,7 +375,7 @@ export default function GeneratePage({ showToast, openReview }) {
                   {attachedFile
                     ? attachedFile.name.slice(0, 16) + (attachedFile.name.length > 16 ? '…' : '')
                     : 'Upload Report'}
-                </button>
+                </button>}
 
                 <button type="button" className="btn btn-primary"
                   onClick={handleGenerate} disabled={loading}>

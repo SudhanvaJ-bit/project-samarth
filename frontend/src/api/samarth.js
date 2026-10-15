@@ -25,7 +25,9 @@ import axios from 'axios'
  * downloads — so this must only ever hold a public URL, never a secret.
  */
 const BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '')
-export const API_BASE_URL = BASE_URL   // shown in connection-error messages
+// Shown in connection-error messages. Empty BASE_URL means "this same site"
+// (VITE_API_URL=/ — the website is served by the API server itself).
+export const API_BASE_URL = BASE_URL || window.location.origin
 const TOKEN_KEY = 'samarth_token'
 const USER_KEY  = 'samarth_user'
 
@@ -144,3 +146,7 @@ export const downloadIEP = (iepId) =>
 
 export const checkHealth = () =>
   reviewApi.get('/iep/health')
+
+/** Public: {enabled:false}, or the demo login + sample students on the online demo. */
+export const getDemoInfo = () =>
+  reviewApi.get('/demo')
