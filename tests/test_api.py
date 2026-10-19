@@ -236,10 +236,44 @@ def test_generate_success(client, educator, fake_pipeline):
     assert drafts[0]["review_status"] == "pending"
 
 
-def test_generate_writes_only_inside_test_folder(client, educator, fake_pipeline, workdir):
+def test_generate_saves_draft_in_database(client, educator, fake_pipeline, workdir):
+    from sqlmodel import Session
+    from app.db import IEPDraft, engine
+
     iep_id = generate(client, educator)
-    assert (workdir / "drafts" / f"{iep_id}.json").is_file()
+    with Session(engine) as session:
+        row = session.get(IEPDraft, iep_id)
+        assert row is not None
+        assert row.record["student_profile"]["student_name"] == "Arjun Sharma"
+        owner = row.owner_id
+    me = client.get("/auth/me", headers=educator).json()
+    assert owner == me["id"]
+    assert not (workdir / "drafts").exists()      # no more JSON files
     assert any((workdir / "outputs").glob("IEP_*.pdf"))
+
+
+def test_drafts_listed_newest_activity_first(client, educator, fake_pipeline):
+    first  = generate(client, educator, student_name="First Student")
+    second = generate(client, educator, student_name="Second Student")
+    ids = [d["iep_id"] for d in client.get("/iep/drafts", headers=educator).json()["drafts"]]
+    assert ids == [second, first]
+
+    client.put(f"/iep/{first}/draft", headers=educator, json={"sections": {"annual_goals": "x"}})
+    ids = [d["iep_id"] for d in client.get("/iep/drafts", headers=educator).json()["drafts"]]
+    assert ids == [first, second]
+
+
+def test_daily_generation_limit(client, educator, other_educator, fake_pipeline, monkeypatch):
+    import app.routers.iep as iep_router
+    monkeypatch.setattr(iep_router, "DAILY_LIMIT", 2)
+    generate(client, educator)
+    generate(client, educator)
+    r = client.post("/iep/generate", json=VALID_PAYLOAD, headers=educator)
+    assert r.status_code == 429
+    assert "Daily limit" in r.json()["detail"]
+    assert len(fake_pipeline) == 2                       # the AI was not called
+    # The limit is per account
+    assert client.post("/iep/generate", json=VALID_PAYLOAD, headers=other_educator).status_code == 201
 
 
 @pytest.mark.parametrize("change", [
@@ -389,8 +423,76 @@ def test_finalize_and_download(client, educator, fake_pipeline):
     assert drafts[0]["grade"] == "Grade 5"
 
 
-def test_download_missing_pdf_is_404(client, educator, fake_pipeline, workdir):
+def test_download_rebuilds_missing_pdf(client, educator, fake_pipeline, workdir):
+    """A cloud server loses outputs/ on restart; the PDF is rebuilt from the draft."""
     iep_id = generate(client, educator)
+    calls_before = len(fake_pipeline)
     for pdf in (workdir / "outputs").glob("*.pdf"):
         pdf.unlink()
-    assert client.get(f"/iep/{iep_id}/download", headers=educator).status_code == 404
+
+    r = client.get(f"/iep/{iep_id}/download", headers=educator)
+    assert r.status_code == 200
+    assert r.content.startswith(b"%PDF")
+    assert len(fake_pipeline) == calls_before           # no AI call to rebuild
+    assert any((workdir / "outputs").glob("IEP_*.pdf"))
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# Server setup
+# ═════════════════════════════════════════════════════════════════════════
+
+def test_admin_created_from_environment(client, db, monkeypatch):
+    from sqlmodel import Session
+    from app.services.auth import ensure_admin_from_env
+
+    monkeypatch.setenv("ADMIN_EMAIL", "Owner@School.test")
+    monkeypatch.setenv("ADMIN_PASSWORD", "first-password-123")
+    with Session(db) as session:
+        ensure_admin_from_env(session)
+    r = client.post("/auth/login", data={"username": "owner@school.test",
+                                         "password": "first-password-123"})
+    assert r.status_code == 200
+    assert r.json()["user"]["role"] == "admin"
+
+    # Restarting with a different password must NOT reset the account
+    monkeypatch.setenv("ADMIN_PASSWORD", "changed-in-dashboard")
+    with Session(db) as session:
+        ensure_admin_from_env(session)
+    r = client.post("/auth/login", data={"username": "owner@school.test",
+                                         "password": "first-password-123"})
+    assert r.status_code == 200
+
+
+def test_admin_not_created_without_settings(client, db, monkeypatch):
+    from sqlmodel import Session, select
+    from app.db import User
+    from app.services.auth import ensure_admin_from_env
+
+    monkeypatch.delenv("ADMIN_EMAIL", raising=False)
+    monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+    with Session(db) as session:
+        ensure_admin_from_env(session)
+        assert session.exec(select(User)).all() == []
+
+
+def test_import_file_drafts(client, educator, workdir):
+    import json
+    import scripts.import_file_drafts as importer
+
+    me = client.get("/auth/me", headers=educator).json()
+    drafts = workdir / "drafts"
+    drafts.mkdir()
+    record = {"iep_id": "11111111-aaaa-bbbb-cccc-222222222222", "owner_id": me["id"],
+              "student_profile": {"student_name": "Old File Student"},
+              "drafted_iep": {}, "review_status": "pending",
+              "created_at": "2026-09-01T10:00:00+00:00", "updated_at": "2026-09-02T10:00:00+00:00"}
+    (drafts / "11111111-aaaa-bbbb-cccc-222222222222.json").write_text(json.dumps(record))
+    (drafts / "no-owner.json").write_text(json.dumps({"iep_id": "no-owner"}))
+    (drafts / "other-owner.json").write_text(json.dumps({"iep_id": "other-owner", "owner_id": 9999}))
+
+    importer.main()
+    importer.main()                                   # safe to run twice
+
+    listed = client.get("/iep/drafts", headers=educator).json()["drafts"]
+    assert [d["student_name"] for d in listed] == ["Old File Student"]
+    assert (drafts / "no-owner.json").exists()       # files are never deleted

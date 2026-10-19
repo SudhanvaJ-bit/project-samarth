@@ -1,18 +1,35 @@
-# Render Blueprint — the SAMARTH online demo.
-# Render dashboard → New → Blueprint → pick this repository.
+# Render Blueprint — SAMARTH, live.
+# Render dashboard → New → Blueprint → this repository.
 #
-# One free web service built from the Dockerfile. It serves the website
-# and the API together in DEMO mode (replays demo/; no Gemini key needed).
+# One free web service built from the Dockerfile: website + API together.
+# Data lives in an external PostgreSQL database (free at neon.tech), because
+# a free Render service loses its disk every time it restarts.
+#
+# Values marked "sync: false" are asked for when you create the Blueprint
+# and are stored only in Render — never in this repository.
 services:
   - type: web
-    name: samarth-demo
+    name: samarth
     runtime: docker
     plan: free
+    region: singapore          # closest Render region to India
     dockerfilePath: ./Dockerfile
     healthCheckPath: /iep/health
     autoDeploy: true
     envVars:
-      - key: SAMARTH_LLM_MODE
-        value: demo
+      - key: GOOGLE_API_KEY            # your Gemini key
+        sync: false
+      - key: DATABASE_URL              # Neon connection string
+        sync: false
+      - key: ADMIN_EMAIL               # first admin account, created on first start
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
       - key: JWT_SECRET
         generateValue: true
+      - key: SAMARTH_LLM_MODE
+        value: live
+      - key: GENERATION_DAILY_LIMIT    # IEPs per account per 24 h (protects your quota)
+        value: "20"
+      - key: SAMARTH_SAVE_RECORDINGS   # keep no copies of prompts/answers on the server
+        value: "false"

@@ -77,7 +77,11 @@ _RECORD_DIR = Path(os.getenv(
     "SAMARTH_RECORDINGS_DIR",
     str(DEMO_DIR / "recordings") if DEMO_MODE else "./.llm_recordings",
 ))
-if not DEMO_MODE:
+# On a server handling real students, don't keep copies of prompts and
+# answers on disk: SAMARTH_SAVE_RECORDINGS=false (render.yaml sets it).
+SAVE_RECORDINGS = os.getenv("SAMARTH_SAVE_RECORDINGS", "true").strip().lower() not in ("false", "0", "no", "off")
+
+if not DEMO_MODE and SAVE_RECORDINGS:
     _RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
 logger.info(f"🎛️  LLM mode: {LLM_MODE.upper()}")
@@ -363,6 +367,8 @@ def _load_recording(key: str):
 
 
 def _save_recording(key: str, role: str, model: str, text: str) -> None:
+    if not SAVE_RECORDINGS:
+        return
     try:
         _recording_path(key).write_text(json.dumps({
             "role":        role,
@@ -441,6 +447,8 @@ def embed_with_recording(text: str, model: str, task_type: str, compute):
             )
 
     vector = list(compute())
+    if not SAVE_RECORDINGS:
+        return vector
     try:
         _recording_path(key).write_text(json.dumps({
             "role":        "embedding",

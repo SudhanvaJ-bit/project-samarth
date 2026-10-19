@@ -1,11 +1,12 @@
 # ─────────────────────────────────────────────────────────────────────────
-# SAMARTH online demo — website + API in one container.
+# SAMARTH — website + API in one container.
 #
-#   docker build -t samarth-demo .
-#   docker run -p 8000:8000 samarth-demo        → http://localhost:8000
+#   docker build -t samarth .
+#   docker run -p 8000:8000 --env-file .env samarth     → http://localhost:8000
 #
-# Runs in DEMO mode: replays the recordings in demo/ and never calls Gemini,
-# so the image contains no API key and needs none.
+# Runs LIVE (real Gemini) by default. Settings come from the environment —
+# on Render, from the dashboard (see render.yaml). Nothing secret is baked
+# into the image: .env is excluded by .dockerignore.
 # ─────────────────────────────────────────────────────────────────────────
 
 # ── Stage 1: build the website ───────────────────────────────────────────
@@ -34,10 +35,14 @@ COPY models/        ./models/
 COPY pdf_generator/ ./pdf_generator/
 COPY rag/           ./rag/
 COPY demo/          ./demo/
+# The legal search index. rag/chroma_db is git-ignored (it changes whenever
+# it is opened), so the committed snapshot in demo/chroma_db is shipped.
+# Building it on the server instead would re-embed every chunk on every
+# restart.
+COPY demo/chroma_db/ ./rag/chroma_db/
 COPY --from=website /build/dist ./website/
 
-ENV SAMARTH_LLM_MODE=demo \
-    SAMARTH_FRONTEND_DIST=/app/website \
+ENV SAMARTH_FRONTEND_DIST=/app/website \
     ANONYMIZED_TELEMETRY=False
 
 # Run as an unprivileged user

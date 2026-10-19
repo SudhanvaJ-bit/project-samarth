@@ -17,6 +17,8 @@ WHAT IT GUARANTEES
 
 RUN
     pytest                 # fast offline suite (about a minute)
+    # against PostgreSQL instead of SQLite (use an EMPTY test database — tables are dropped):
+    #   SAMARTH_TEST_DATABASE_URL=postgresql://… pytest
     pytest --live          # also the real-Gemini tests (several minutes)
     pytest tests/test_api.py -v
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -41,7 +43,8 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 _TEST_TMP = Path(tempfile.mkdtemp(prefix="samarth-tests-"))
-os.environ["DATABASE_URL"] = f"sqlite:///{(_TEST_TMP / 'test_users.db').as_posix()}"
+os.environ["DATABASE_URL"] = os.getenv("SAMARTH_TEST_DATABASE_URL") or \
+    f"sqlite:///{(_TEST_TMP / 'test_users.db').as_posix()}"
 os.environ["JWT_SECRET"]   = "test-only-secret-not-used-anywhere-else-0123456789"
 os.environ.setdefault("GOOGLE_API_KEY", "test-dummy-key")   # offline tests never call Gemini
 

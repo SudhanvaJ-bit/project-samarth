@@ -6,8 +6,10 @@ DRAFT STORE — persistence layer for the Human Review step.
 Saves everything generate_iep_pdf() needs to rebuild the document, so a
 teacher can edit the IEP and rebuild it WITHOUT any LLM calls.
 
-Storage: JSON files under ./drafts/{iep_id}.json
-(Swap for PostgreSQL later — the interface here is deliberately small.)
+Storage: one row per IEP in the iep_drafts table (app/db.py) — SQLite
+locally, PostgreSQL online. The draft is kept as one JSON document, so the
+editing logic below works on a plain dict. Earlier versions wrote
+./drafts/{iep_id}.json; import those with scripts/import_file_drafts.py.
 
 WHAT CAN BE EDITED
   1. Student details (Section 1) — STRUCTURED fields on student_profile:
@@ -27,9 +29,7 @@ edited_sections / edited_profile_fields record exactly what a human changed.
 
 OWNERSHIP
 Every draft records owner_id — the educator who generated it. Only that
-educator can read, edit, rebuild or download it. Drafts created before
-login existed have no owner_id and are visible to nobody; remove them with
-scripts/cleanup_legacy.py.
+educator can read, edit, rebuild or download it.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -37,13 +37,15 @@ import copy
 import json
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from sqlalchemy import func
+from sqlalchemy.orm.attributes import flag_modified
+from sqlmodel import Session, select
 
-DRAFTS_DIR = Path("./drafts")
-DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
+from app.db import IEPDraft, engine
+
+logger = logging.getLogger(__name__)
 
 
 # ── Section 1: structured student fields ─────────────
@@ -86,12 +88,16 @@ SECTION_KEYS = [k for k, _ in EDITABLE_SECTIONS]
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _draft_path(iep_id: str) -> Path:
-    """Resolve the JSON path for an IEP id, guarding against path traversal."""
-    safe_id = "".join(c for c in str(iep_id) if c.isalnum() or c in "-_")
-    if not safe_id:
+def _safe_id(iep_id: str) -> str:
+    """IEP ids are UUIDs; reject anything else outright."""
+    text = str(iep_id)
+    if not text or len(text) > 64 or any(not (c.isalnum() or c in "-_") for c in text):
         raise ValueError(f"Invalid iep_id: {iep_id!r}")
-    return DRAFTS_DIR / f"{safe_id}.json"
+    return text
+
+
+def _db_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _clean_for_json(obj):
@@ -112,14 +118,23 @@ def _now() -> str:
 
 
 def _write(iep_id: str, record: dict) -> None:
-    path = _draft_path(iep_id)
-    # Create the folder on every write, not only at import: if drafts/ is
-    # deleted while the server runs, or the server is started from another
-    # folder, saving must still work.
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(record, indent=2, ensure_ascii=False), encoding="utf-8"
-    )
+    """Insert or update one draft row."""
+    iep_id = _safe_id(iep_id)
+    # Round-trip through JSON so only plain data is stored (no enums, dates)
+    record = json.loads(json.dumps(record, ensure_ascii=False, default=str))
+    now = _db_now()
+    with Session(engine) as session:
+        row = session.get(IEPDraft, iep_id)
+        if row is None:
+            row = IEPDraft(iep_id=iep_id, owner_id=record.get("owner_id"),
+                           record=record, created_at=now, updated_at=now)
+        else:
+            row.record     = record
+            row.owner_id   = record.get("owner_id")
+            row.updated_at = now
+            flag_modified(row, "record")     # JSON column changed in place
+        session.add(row)
+        session.commit()
 
 
 def _validate_profile_value(key: str, value) -> object:
@@ -192,8 +207,8 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[
         "updated_at": _now(),
     }
     _write(iep_id, record)
-    logger.info(f"  💾 Draft saved for review: {_draft_path(iep_id)}")
-    return str(_draft_path(iep_id))
+    logger.info(f"  💾 Draft saved for review: {iep_id}")
+    return iep_id
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -201,14 +216,11 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_draft(iep_id: str) -> Optional[dict]:
-    path = _draft_path(iep_id)
-    if not path.exists():
-        return None
-    try:
-        record = json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        logger.error(f"Draft file corrupt for {iep_id}: {e}")
-        return None
+    with Session(engine) as session:
+        row = session.get(IEPDraft, _safe_id(iep_id))
+        if row is None:
+            return None
+        record = copy.deepcopy(row.record or {})
 
     # Backfill fields for drafts created before profile editing existed
     record.setdefault("original_profile", copy.deepcopy(record.get("student_profile", {})))
@@ -235,17 +247,20 @@ def load_owned_draft(iep_id: str, owner_id: int) -> Optional[dict]:
 
 def list_drafts(owner_id: int, limit: int = 50) -> list:
     """Drafts belonging to one educator, newest first."""
+    with Session(engine) as session:
+        rows = session.exec(
+            select(IEPDraft)
+            .where(IEPDraft.owner_id == owner_id)
+            .order_by(IEPDraft.updated_at.desc())
+            .limit(max(1, min(int(limit), 500)))
+        ).all()
+        records = [(row.iep_id, row.record or {}) for row in rows]
+
     out = []
-    for p in DRAFTS_DIR.glob("*.json"):
-        try:
-            rec = json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            continue
-        if rec.get("owner_id") != owner_id:
-            continue
+    for iep_id, rec in records:
         profile = rec.get("student_profile", {})
         out.append({
-            "iep_id":              rec.get("iep_id", p.stem),
+            "iep_id":              rec.get("iep_id", iep_id),
             "student_name":        profile.get("student_name", "Unknown"),
             "disability_category": profile.get("disability_category", ""),
             "grade":               str(profile.get("grade", "") or ""),
@@ -254,8 +269,16 @@ def list_drafts(owner_id: int, limit: int = 50) -> list:
             "created_at":    rec.get("created_at", ""),
             "updated_at":    rec.get("updated_at", ""),
         })
-    out.sort(key=lambda r: r.get("updated_at", ""), reverse=True)
-    return out[:limit]
+    return out
+
+
+def count_created_since(owner_id: int, since: datetime) -> int:
+    """How many IEPs this educator generated since `since` (timezone-aware)."""
+    with Session(engine) as session:
+        return session.exec(
+            select(func.count()).select_from(IEPDraft)
+            .where(IEPDraft.owner_id == owner_id, IEPDraft.created_at >= since)
+        ).one()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

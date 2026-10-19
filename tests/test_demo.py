@@ -115,6 +115,16 @@ def test_embeddings_record_then_replay(tmp_path, monkeypatch):
         mc.embed_with_recording("other query", "model", "RETRIEVAL_QUERY", lambda: [9.9])
 
 
+def test_recordings_can_be_switched_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(mc, "_RECORD_DIR", tmp_path)
+    monkeypatch.setattr(mc, "LLM_MODE", "live")
+    monkeypatch.setattr(mc, "DEMO_MODE", False)
+    monkeypatch.setattr(mc, "SAVE_RECORDINGS", False)
+    mc._save_recording("scraper_x", "scraper", "m", "text")
+    assert mc.embed_with_recording("q", "model", "RETRIEVAL_QUERY", lambda: [1.0]) == [1.0]
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_no_api_key_gives_clear_error(monkeypatch):
     monkeypatch.setattr(mc, "_client", None)
     with pytest.raises(RuntimeError, match="GOOGLE_API_KEY"):

@@ -213,6 +213,29 @@ def create_user(session: Session, email: str, full_name: str,
     return user
 
 
+def ensure_admin_from_env(session: Session) -> None:
+    """
+    Create the first administrator from ADMIN_EMAIL / ADMIN_PASSWORD when
+    that account doesn't exist yet. Needed on hosts with no command line
+    (Render's free plan); locally `python -m app.cli` does the same job.
+
+    Runs on every startup but only ever CREATES: an existing account's
+    password is never overwritten, so changing it later sticks. Once the
+    admin exists, these two settings can be removed.
+    """
+    email    = os.getenv("ADMIN_EMAIL", "").strip()
+    password = os.getenv("ADMIN_PASSWORD", "")
+    if not email or not password:
+        return
+    try:
+        if get_user_by_email(session, normalise_email(email)):
+            return
+        create_user(session, email, os.getenv("ADMIN_NAME", "Administrator"), password, "admin")
+        logger.info(f"Created administrator {email} from ADMIN_EMAIL")
+    except ValueError as e:
+        logger.error(f"ADMIN_EMAIL/ADMIN_PASSWORD not used: {e}")
+
+
 def set_password(session: Session, user: User, new_password: str) -> None:
     validate_password(new_password)
     user.password_hash = hash_password(new_password)

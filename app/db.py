@@ -13,8 +13,15 @@ PostgreSQL later means changing ONE setting:
 No model or query code changes.
 
 WHAT IS STORED
-Only account data. IEP drafts still live in ./drafts/ as JSON for now;
-each draft records its owner's user id.
+  users       — accounts
+  iep_drafts  — every generated IEP and its review history, one row each.
+                The draft itself is a JSON document (see draft_store.py);
+                owner_id and the timestamps are real columns so they can be
+                filtered and sorted.
+
+Drafts used to be files in ./drafts/. Files vanish when a cloud server
+restarts, a database does not. Old file drafts can be imported with
+scripts/import_file_drafts.py.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -23,11 +30,15 @@ from datetime import datetime, timezone
 from typing import Iterator, Optional
 
 from dotenv import load_dotenv
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, Session, SQLModel, create_engine
 
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./samarth.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./samarth.db").strip()
+# Some hosts hand out "postgres://", which SQLAlchemy no longer accepts
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
 # SQLite needs this flag because FastAPI may use the connection from a
 # different thread than the one that opened it. PostgreSQL does not.
@@ -63,6 +74,22 @@ class User(SQLModel, table=True):
     role:          str           = Field(default="educator", max_length=20)
     is_active:     bool          = Field(default=True)
     created_at:    datetime      = Field(default_factory=_utcnow)
+
+
+class IEPDraft(SQLModel, table=True):
+    """
+    One IEP. `record` holds the full draft document — student profile,
+    drafted sections, the original AI text, review history — exactly as
+    draft_store.py builds it. Only the educator in owner_id can see it.
+    Timestamps are timezone-aware UTC.
+    """
+    __tablename__ = "iep_drafts"
+
+    iep_id:     str            = Field(primary_key=True, max_length=64)
+    owner_id:   Optional[int]  = Field(default=None, foreign_key="users.id", index=True)
+    record:     dict           = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    created_at: datetime       = Field(index=True)
+    updated_at: datetime       = Field(index=True)
 
 
 def init_db() -> None:

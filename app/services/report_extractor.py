@@ -29,6 +29,7 @@ FIXES / FEATURES:
 import hashlib
 import json
 import logging
+import os
 import re
 from pathlib import Path
 
@@ -73,6 +74,9 @@ def _read_cache(pdf_bytes: bytes):
 
 
 def _write_cache(pdf_bytes: bytes, data: dict) -> None:
+    # Same switch as the LLM recordings: no copies of reports on a server
+    if os.getenv("SAMARTH_SAVE_RECORDINGS", "true").strip().lower() in ("false", "0", "no", "off"):
+        return
     try:
         _cache_path(pdf_bytes).write_text(
             json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"

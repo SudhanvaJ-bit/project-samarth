@@ -24,11 +24,14 @@ actually made each change.
 """
 
 import logging
+import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -46,6 +49,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/iep", tags=["IEP Generation"])
 
 OUTPUTS_DIR = Path("./outputs")
+
+# Protects the Gemini quota on a shared server: at most this many IEPs per
+# educator in any 24 hours. 0 (the default) means no limit.
+try:
+    DAILY_LIMIT = max(0, int(os.getenv("GENERATION_DAILY_LIMIT", "0")))
+except ValueError:
+    DAILY_LIMIT = 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +108,18 @@ def _owned_or_404(iep_id: str, user: User) -> dict:
     if record is None:
         raise _not_found(iep_id)
     return record
+
+
+def _check_daily_limit(user: User) -> None:
+    if DAILY_LIMIT <= 0:
+        return
+    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    if draft_store.count_created_since(user.id, since) >= DAILY_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail=(f"Daily limit reached: {DAILY_LIMIT} IEPs per 24 hours per account. "
+                    f"You can still review, edit and download your existing IEPs."),
+        )
 
 
 def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
@@ -161,9 +183,14 @@ async def generate_iep(payload: StudentInput, user: User = Depends(require_educa
                     "the sample students. Pick one from 'Load a sample student' and "
                     "generate it without editing the fields."),
         )
+    _check_daily_limit(user)
     try:
         student_data = payload.to_pipeline_input(iep_id)
-        return _run_and_respond(student_data, iep_id, payload.student_name, "manual", user)
+        # The pipeline takes a minute or more. Running it on a worker thread
+        # keeps the server answering other requests — other teachers, and
+        # the host's health checks, which would otherwise restart it.
+        return await run_in_threadpool(
+            _run_and_respond, student_data, iep_id, payload.student_name, "manual", user)
     except HTTPException:
         raise
     except Exception as e:
@@ -182,6 +209,7 @@ async def generate_iep_from_report(file: UploadFile = File(...),
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
+    _check_daily_limit(user)
     pdf_bytes = await file.read()
     if len(pdf_bytes) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="PDF too large. Maximum 20 MB.")
@@ -189,7 +217,7 @@ async def generate_iep_from_report(file: UploadFile = File(...),
     iep_id = str(uuid.uuid4())
 
     try:
-        extracted = extract_student_data_from_pdf(pdf_bytes)
+        extracted = await run_in_threadpool(extract_student_data_from_pdf, pdf_bytes)
     except Exception as e:
         logger.error(f"PDF extraction failed: {e}")
         raise HTTPException(status_code=422,
@@ -213,8 +241,9 @@ async def generate_iep_from_report(file: UploadFile = File(...),
         raise HTTPException(status_code=422, detail=f"Extraction missing required field: {e}")
 
     try:
-        return _run_and_respond(student_data, iep_id, extracted["student_name"],
-                                "pdf-report", user)
+        return await run_in_threadpool(
+            _run_and_respond, student_data, iep_id, extracted["student_name"],
+            "pdf-report", user)
     except Exception as e:
         logger.error(f"Pipeline error for IEP {iep_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
@@ -341,14 +370,19 @@ async def finalize_draft(iep_id: str, payload: FinalizeRequest = FinalizeRequest
 async def download_iep(iep_id: str, user: User = Depends(require_educator)):
     record = _owned_or_404(iep_id, user)
 
-    # Prefer the exact path recorded on the draft (updated on every rebuild)
+    # The file recorded on the draft, if it is still there. On a cloud
+    # server it disappears on every restart, so it is rebuilt from the
+    # saved draft — no AI calls, the same content as before.
     pdf_path = Path(record.get("pdf_path") or "")
     if not pdf_path.is_file():
-        OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
-        matches = [p for p in OUTPUTS_DIR.glob("IEP_*.pdf") if iep_id[:8] in p.name]
-        if not matches:
-            raise HTTPException(status_code=404, detail="The PDF for this IEP is missing.")
-        pdf_path = max(matches, key=lambda p: p.stat().st_mtime)
+        try:
+            pdf_path = Path(generate_iep_pdf(draft_store.to_pdf_state(record),
+                                             output_dir=str(OUTPUTS_DIR)))
+            draft_store.set_pdf_path(iep_id, str(pdf_path))
+            logger.info(f"Rebuilt missing PDF for {iep_id}")
+        except Exception as e:
+            logger.error(f"PDF rebuild failed for {iep_id}: {e}")
+            raise HTTPException(status_code=500, detail="The PDF could not be rebuilt.")
 
     logger.info(f"{user.email} downloaded {pdf_path.name}")
     return FileResponse(path=str(pdf_path), filename=pdf_path.name,

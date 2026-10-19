@@ -31,7 +31,10 @@ from fastapi.responses import FileResponse                      # noqa: E402
 from fastapi.staticfiles import StaticFiles                     # noqa: E402
 
 from agents.model_config import DEMO_MODE                       # noqa: E402
-from app.db import init_db                                      # noqa: E402
+from sqlmodel import Session                                     # noqa: E402
+
+from app.db import engine, init_db                              # noqa: E402
+from app.services.auth import ensure_admin_from_env             # noqa: E402
 from app.services import demo                                   # noqa: E402
 from app.routers.auth import router as auth_router             # noqa: E402
 from app.routers.iep import router as iep_router               # noqa: E402
@@ -45,7 +48,9 @@ async def lifespan(app: FastAPI):
     logger.info("SAMARTH starting up…")
 
     init_db()
-    logger.info("User database ready")
+    with Session(engine) as session:
+        ensure_admin_from_env(session)
+    logger.info(f"Database ready ({engine.url.get_backend_name()})")
 
     if DEMO_MODE:
         demo.ensure_demo_account()
