@@ -22,12 +22,17 @@ logging.basicConfig(
 logger = logging.getLogger("samarth.main")
 
 from contextlib import asynccontextmanager                      # noqa: E402
+from pathlib import Path                                        # noqa: E402
 
 from dotenv import load_dotenv                                  # noqa: E402
-from fastapi import FastAPI                                     # noqa: E402
+from fastapi import FastAPI, HTTPException                      # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware              # noqa: E402
+from fastapi.responses import FileResponse                      # noqa: E402
+from fastapi.staticfiles import StaticFiles                     # noqa: E402
 
+from agents.model_config import DEMO_MODE                       # noqa: E402
 from app.db import init_db                                      # noqa: E402
+from app.services import demo                                   # noqa: E402
 from app.routers.auth import router as auth_router             # noqa: E402
 from app.routers.iep import router as iep_router               # noqa: E402
 from rag.retriever import initialize_retriever, get_retriever_stats  # noqa: E402
@@ -41,6 +46,14 @@ async def lifespan(app: FastAPI):
 
     init_db()
     logger.info("User database ready")
+
+    if DEMO_MODE:
+        demo.ensure_demo_account()
+        info = demo.public_info()
+        logger.info(
+            f"DEMO MODE — replay only, no Gemini calls. "
+            f"{len(info['samples'])} sample student(s), recorded on {info['recorded_on'] or '?'}"
+        )
 
     logger.info("Initialising ChromaDB retriever…")
     try:
@@ -93,12 +106,48 @@ app.include_router(auth_router)
 app.include_router(iep_router)
 
 
+# ── Optional: serve the built website from this server ──────────────────
+# Set SAMARTH_FRONTEND_DIST to frontend/dist (the Docker image does). The
+# site and the API then share one address: one link to share, no CORS.
+# In local development leave it unset and use `npm run dev` as before.
+_dist = os.getenv("SAMARTH_FRONTEND_DIST", "").strip()
+FRONTEND_DIST = Path(_dist) if _dist and (Path(_dist) / "index.html").is_file() else None
+
+if FRONTEND_DIST is not None:
+    logger.info(f"Serving the website from {FRONTEND_DIST}")
+    if (FRONTEND_DIST / "assets").is_dir():
+        app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="assets")
+
+
 @app.get("/", tags=["Root"])
 async def root():
+    if FRONTEND_DIST is not None:
+        return FileResponse(FRONTEND_DIST / "index.html")
     return {
         "project":    "Project SAMARTH",
         "version":    "1.1.0",
         "docs":       "/docs",
         "compliance": ["RPwD Act 2016", "NCTE/NCERT Guidelines"],
         "iep_format": "NASET 11-section standard",
+        "demo_mode":  DEMO_MODE,
     }
+
+
+@app.get("/demo", tags=["Root"], summary="Online-demo details (public)")
+async def demo_details():
+    """
+    Whether this server is the public demo and, if so, the shared login and
+    the sample students. Returns {"enabled": false} on a normal server.
+    """
+    return demo.public_info()
+
+
+if FRONTEND_DIST is not None:
+    @app.get("/{filename}", include_in_schema=False)
+    async def website_file(filename: str):
+        """Top-level website files such as /favicon.svg. Registered last, so
+        it never shadows an API route."""
+        path = (FRONTEND_DIST / filename).resolve()
+        if path.parent != FRONTEND_DIST.resolve() or not path.is_file():
+            raise HTTPException(status_code=404, detail="Not Found")
+        return FileResponse(path)

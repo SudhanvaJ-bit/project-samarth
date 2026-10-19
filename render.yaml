@@ -1,0 +1,18 @@
+# Render Blueprint — the SAMARTH online demo.
+# Render dashboard → New → Blueprint → pick this repository.
+#
+# One free web service built from the Dockerfile. It serves the website
+# and the API together in DEMO mode (replays demo/; no Gemini key needed).
+services:
+  - type: web
+    name: samarth-demo
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /iep/health
+    autoDeploy: true
+    envVars:
+      - key: SAMARTH_LLM_MODE
+        value: demo
+      - key: JWT_SECRET
+        generateValue: true

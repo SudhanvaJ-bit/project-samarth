@@ -22,12 +22,22 @@ Centralised model selection, automatic fallback, and record/replay.
    HttpRetryOptions(attempts=1) disables retries at the layer that does them,
    so fallback fires in seconds instead of minutes.
 
-4. RECORD / REPLAY
+4. RECORD / REPLAY / DEMO
    SAMARTH_LLM_MODE in .env:
      live    (default)  Always call Gemini; save each response for replay.
      replay             Return a saved response for an identical prompt with
                         no API call; otherwise call once and save it.
-   Applies to the three agents. PDF extraction has its own content cache.
+     demo               Replay ONLY. Never calls Gemini and needs no API key.
+                        A prompt with no recording is an error. Used by the
+                        public online demo (see demo/README.md).
+   Applies to the three agents AND the RAG query embeddings. PDF extraction
+   has its own content cache.
+
+5. WHY "TODAY" CAN BE FROZEN
+   The drafting prompt contains real dates (meeting date, service start,
+   annual review). A recording made on one day never matches a prompt built
+   on another day. current_date() returns SAMARTH_FIXED_DATE when set, and in
+   demo mode the date the demo was recorded, so replays keep matching.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -36,7 +46,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,14 +64,53 @@ _API_KEY = os.getenv("GOOGLE_API_KEY")
 # ─────────────────────────────────────────────────────────────────────────────
 
 LLM_MODE = os.getenv("SAMARTH_LLM_MODE", "live").strip().lower()
-if LLM_MODE not in ("live", "replay"):
+if LLM_MODE not in ("live", "replay", "demo"):
     logger.warning(f"Unknown SAMARTH_LLM_MODE '{LLM_MODE}' — using 'live'")
     LLM_MODE = "live"
 
-_RECORD_DIR = Path("./.llm_recordings")
-_RECORD_DIR.mkdir(parents=True, exist_ok=True)
+DEMO_MODE = LLM_MODE == "demo"
+DEMO_DIR  = Path(os.getenv("SAMARTH_DEMO_DIR", "./demo"))
+
+# Where recordings are read and written. The demo uses its own committed
+# folder; normal use keeps them in the git-ignored .llm_recordings/.
+_RECORD_DIR = Path(os.getenv(
+    "SAMARTH_RECORDINGS_DIR",
+    str(DEMO_DIR / "recordings") if DEMO_MODE else "./.llm_recordings",
+))
+if not DEMO_MODE:
+    _RECORD_DIR.mkdir(parents=True, exist_ok=True)
 
 logger.info(f"🎛️  LLM mode: {LLM_MODE.upper()}")
+
+
+class DemoRecordingMissing(RuntimeError):
+    """Demo mode was asked for something that was never recorded."""
+
+
+def _read_demo_manifest() -> dict:
+    path = DEMO_DIR / "manifest.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def current_date() -> date:
+    """
+    "Today" as the pipeline should see it.
+      1. SAMARTH_FIXED_DATE=YYYY-MM-DD, if set
+      2. demo mode: the date the demo was recorded (demo/manifest.json)
+      3. otherwise the real date
+    """
+    fixed = os.getenv("SAMARTH_FIXED_DATE", "").strip()
+    if not fixed and DEMO_MODE:
+        fixed = str(_read_demo_manifest().get("recorded_on", "")).strip()
+    if fixed:
+        try:
+            return date.fromisoformat(fixed)
+        except ValueError:
+            logger.warning(f"Ignoring invalid fixed date '{fixed}' (use YYYY-MM-DD)")
+    return date.today()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -137,7 +186,18 @@ def _build_client() -> genai.Client:
         return genai.Client(api_key=_API_KEY)
 
 
-_client = _build_client()
+# No key is fine in demo mode — nothing calls Gemini. Anything that does
+# try gets a clear error from get_client() instead of a crash at startup.
+_client = _build_client() if _API_KEY else None
+
+
+def get_client() -> genai.Client:
+    if _client is None:
+        raise RuntimeError(
+            "GOOGLE_API_KEY is not set, so Gemini cannot be called"
+            + (" (the online demo only replays recorded runs)." if DEMO_MODE else ".")
+        )
+    return _client
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +257,7 @@ def generate_content_with_fallback(role: str, contents, config=None, max_chain: 
                 logger.warning(f"  ↩️  Falling back to '{model_name}' (model {attempt} of {len(chain)})")
 
             started  = time.time()
-            response = _client.models.generate_content(
+            response = get_client().models.generate_content(
                 model=model_name, contents=contents, config=config,
             )
             elapsed = time.time() - started
@@ -325,7 +385,7 @@ def invoke_with_fallback(role: str, messages, max_chain: int = None):
     """
     key = _recording_key(role, messages)
 
-    if LLM_MODE == "replay":
+    if LLM_MODE in ("replay", "demo"):
         rec = _load_recording(key)
         if rec is not None:
             logger.info(
@@ -333,6 +393,11 @@ def invoke_with_fallback(role: str, messages, max_chain: int = None):
                 f"(originally {rec.get('model', '?')}) — no API call"
             )
             return _Response(rec["text"], rec.get("model", "replay"), replayed=True)
+        if DEMO_MODE:
+            raise DemoRecordingMissing(
+                f"No recording for the '{role}' step. The online demo can only "
+                f"replay the sample students it was recorded with."
+            )
         logger.info(f"  🔁 No recording for '{role}' yet — calling live once to record it")
 
     system_instruction, contents = _to_genai_request(messages)
@@ -345,3 +410,46 @@ def invoke_with_fallback(role: str, messages, max_chain: int = None):
     text = response.text or ""
     _save_recording(key, role, model_name, text)
     return _Response(text, model_name)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RAG query embeddings — recorded the same way
+# ─────────────────────────────────────────────────────────────────────────────
+
+def embed_with_recording(text: str, model: str, task_type: str, compute):
+    """
+    Return the embedding vector for `text`, using a recording when allowed.
+
+    `compute` is a zero-argument function that calls Gemini. Recording these
+    makes the compliance step (which searches the legal documents) fully
+    replayable, so the demo needs no API key at all.
+    """
+    h = hashlib.sha256()
+    for part in (model, task_type, text):
+        h.update(part.encode("utf-8"))
+        h.update(b"\x00")
+    key = f"embed_{h.hexdigest()[:24]}"
+
+    if LLM_MODE in ("replay", "demo"):
+        rec = _load_recording(key)
+        if rec is not None and isinstance(rec.get("vector"), list):
+            return rec["vector"]
+        if DEMO_MODE:
+            raise DemoRecordingMissing(
+                "No recording for this legal-document search. The online demo "
+                "can only replay the sample students it was recorded with."
+            )
+
+    vector = list(compute())
+    try:
+        _recording_path(key).write_text(json.dumps({
+            "role":        "embedding",
+            "model":       model,
+            "task_type":   task_type,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+            "text":        text,
+            "vector":      vector,
+        }), encoding="utf-8")
+    except Exception as e:
+        logger.warning(f"  Could not save embedding recording ({e})")
+    return vector

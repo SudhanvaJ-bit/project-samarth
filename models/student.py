@@ -47,6 +47,26 @@ class StudentInput(BaseModel):
     parent_concerns:      Optional[str] = Field(None,
                                       description="Parent submitted concerns")
 
+    def to_pipeline_input(self, student_id: str) -> dict:
+        """
+        The dict the pipeline receives. The API and scripts/record_demo.py
+        both use this, so a recorded demo run sees exactly the same input as
+        a request through the website.
+        """
+        return {
+            "student_id":           student_id,
+            "student_name":         self.student_name,
+            "age":                  self.age,
+            "grade":                self.grade,
+            "school_name":          self.school_name,
+            "disability_category":  self.disability_category.value,
+            "disability_severity":  self.disability_severity.value,
+            "raw_notes":            self.raw_notes,
+            "academic_history":     self.academic_history     or "",
+            "teacher_observations": self.teacher_observations or "",
+            "parent_concerns":      self.parent_concerns      or "",
+        }
+
     model_config = {
         "json_schema_extra": {
             "example": {

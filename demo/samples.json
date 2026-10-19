@@ -1,0 +1,101 @@
+{
+  "_note": "Synthetic students for the online demo. Not real children. Re-record with: python scripts/record_demo.py",
+  "samples": [
+    {
+      "id": "arjun-dyslexia",
+      "label": "Arjun Sharma — Dyslexia (moderate), age 10",
+      "student": {
+        "student_name": "Arjun Sharma",
+        "age": 10,
+        "grade": "Grade 4",
+        "school_name": "Delhi Public School, Bengaluru",
+        "disability_category": "Dyslexia",
+        "disability_severity": "moderate",
+        "raw_notes": "Arjun struggles with reading and written expression. Reverses letters b/d and p/q. Excels in oral discussions, spatial reasoning, and mathematics. Strong verbal memory. Creative and enthusiastic learner.",
+        "academic_history": "Grade 3: 62%. Below average English, average Maths.",
+        "teacher_observations": "Loses focus during reading. Engaged in group discussions.",
+        "parent_concerns": "Gets frustrated with reading homework."
+      }
+    },
+    {
+      "id": "ravi-autism",
+      "label": "Ravi Nair — Autism Spectrum Disorder (mild), age 9",
+      "student": {
+        "student_name": "Ravi Nair",
+        "age": 9,
+        "grade": "Grade 3",
+        "school_name": "VIBGYOR High, Pune",
+        "disability_category": "Autism Spectrum Disorder",
+        "disability_severity": "mild",
+        "raw_notes": "Ravi has difficulty with social interactions and unstructured activities. Prefers routines and gets distressed by sudden changes. Exceptional memory for facts and strong in mathematics and science. Communicates well one-on-one.",
+        "academic_history": "Grade 2: 75%. Strong academics, weak social participation.",
+        "teacher_observations": "Works best with structured tasks. Sensitive to noise.",
+        "parent_concerns": "Social isolation during lunch and recess."
+      }
+    },
+    {
+      "id": "rahul-visual",
+      "label": "Rahul Verma — Visual Impairment (moderate), age 14",
+      "student": {
+        "student_name": "Rahul Verma",
+        "age": 14,
+        "grade": "Grade 9",
+        "school_name": "Navodaya Vidyalaya, Pune",
+        "disability_category": "Visual Impairment",
+        "disability_severity": "moderate",
+        "raw_notes": "Rahul has low vision and requires large print materials. Academically strong and highly motivated. Excellent in oral work, mathematics, and science. Struggles with standard printed textbooks. Uses magnifier currently.",
+        "academic_history": "Grade 8: 78%. Strong across subjects with support.",
+        "teacher_observations": "Needs front seating and large print. Very motivated.",
+        "parent_concerns": "Board exam accommodations and college admission."
+      }
+    },
+    {
+      "id": "aryan-hearing",
+      "label": "Aryan Singh — Hearing Impairment (severe), age 13",
+      "student": {
+        "student_name": "Aryan Singh",
+        "age": 13,
+        "grade": "Grade 7",
+        "school_name": "Vidya Sagar School, Chennai",
+        "disability_category": "Hearing Impairment",
+        "disability_severity": "severe",
+        "raw_notes": "Aryan is profoundly deaf and communicates using Indian Sign Language. Excellent visual learner and strong in mathematics and art. Requires sign language interpreter for all instruction. Active and enthusiastic learner.",
+        "academic_history": "Grade 6: 70% with sign language support.",
+        "teacher_observations": "Engaged and motivated with ISL interpreter present.",
+        "parent_concerns": "Availability of qualified ISL interpreters."
+      }
+    },
+    {
+      "id": "vikram-intellectual",
+      "label": "Vikram Joshi — Intellectual Disability (mild), age 15",
+      "student": {
+        "student_name": "Vikram Joshi",
+        "age": 15,
+        "grade": "Grade 8",
+        "school_name": "National Institute for Mentally Handicapped, Secunderabad",
+        "disability_category": "Intellectual Disability",
+        "disability_severity": "mild",
+        "raw_notes": "Vikram has mild intellectual disability with strong social skills. Can read simple texts and do basic arithmetic. Excellent at vocational tasks like assembly and sorting. Preparing for transition to vocational training.",
+        "academic_history": "Functional academic skills. Strong in practical workshops.",
+        "teacher_observations": "Motivated and hardworking in vocational activities.",
+        "parent_concerns": "Vocational training and supported employment pathways."
+      }
+    },
+    {
+      "id": "pooja-cerebral",
+      "label": "Pooja Sharma — Cerebral Palsy (moderate), age 12",
+      "student": {
+        "student_name": "Pooja Sharma",
+        "age": 12,
+        "grade": "Grade 6",
+        "school_name": "Vidyasagar Institute, Mumbai",
+        "disability_category": "Cerebral Palsy",
+        "disability_severity": "moderate",
+        "raw_notes": "Pooja has spastic diplegia affecting lower limbs. Uses wheelchair for mobility. Strong cognitive ability and academic performance. Needs physical accessibility accommodations and assistive technology for writing. Highly motivated learner.",
+        "academic_history": "Grade 5: 74%. Strong across subjects with physical support.",
+        "teacher_observations": "Excellent student. Needs physical access and writing support.",
+        "parent_concerns": "Physical accessibility and assistive technology for writing."
+      }
+    }
+  ]
+}

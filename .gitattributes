@@ -11,3 +11,4 @@
 *.sqlite3 binary
 *.db      binary
 *.bin     binary
+*.pickle  binary

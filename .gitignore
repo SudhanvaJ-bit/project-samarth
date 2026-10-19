@@ -28,3 +28,9 @@ Thumbs.db
 # ── Vector index — rebuild with: python rag/build_index.py ──
 chroma_db/
 rag/chroma_db/
+# …except the demo's frozen copy, which the online demo needs (see demo/README.md)
+!demo/chroma_db/
+# SQLite temporary files — never commit
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm

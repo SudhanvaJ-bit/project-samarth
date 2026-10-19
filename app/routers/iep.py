@@ -33,8 +33,9 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from agents.graph import run_iep_pipeline
+from agents.model_config import DEMO_MODE
 from app.db import User
-from app.services import draft_store
+from app.services import demo, draft_store
 from app.services.auth import require_educator
 from app.services.report_extractor import extract_student_data_from_pdf
 from models.student import IEPResponse, StudentInput
@@ -153,20 +154,15 @@ def _apply_or_error(iep_id: str, user: User, **kwargs) -> dict:
              summary="Generate a complete IEP for a student")
 async def generate_iep(payload: StudentInput, user: User = Depends(require_educator)):
     iep_id = str(uuid.uuid4())
+    if DEMO_MODE and demo.matching_sample(payload.model_dump(mode="json")) is None:
+        raise HTTPException(
+            status_code=422,
+            detail=("This online demo replays recorded runs, so it can only generate "
+                    "the sample students. Pick one from 'Load a sample student' and "
+                    "generate it without editing the fields."),
+        )
     try:
-        student_data = {
-            "student_id":           iep_id,
-            "student_name":         payload.student_name,
-            "age":                  payload.age,
-            "grade":                payload.grade,
-            "school_name":          payload.school_name,
-            "disability_category":  payload.disability_category.value,
-            "disability_severity":  payload.disability_severity.value,
-            "raw_notes":            payload.raw_notes,
-            "academic_history":     payload.academic_history     or "",
-            "teacher_observations": payload.teacher_observations or "",
-            "parent_concerns":      payload.parent_concerns      or "",
-        }
+        student_data = payload.to_pipeline_input(iep_id)
         return _run_and_respond(student_data, iep_id, payload.student_name, "manual", user)
     except HTTPException:
         raise
@@ -179,6 +175,10 @@ async def generate_iep(payload: StudentInput, user: User = Depends(require_educa
              summary="Upload a psychoeducational report PDF and generate an IEP")
 async def generate_iep_from_report(file: UploadFile = File(...),
                                    user: User = Depends(require_educator)):
+    if DEMO_MODE:
+        # A public demo must never receive a real child's report
+        raise HTTPException(status_code=403,
+                            detail="PDF upload is turned off in the online demo.")
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
@@ -365,4 +365,5 @@ async def health():
         "rag_backend":    "ChromaDB",
         "chunks_indexed": stats["total_chunks"],
         "rag_ready":      stats["ready"],
+        "demo_mode":      DEMO_MODE,
     }

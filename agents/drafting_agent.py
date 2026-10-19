@@ -40,7 +40,7 @@ from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from agents.state import IEPState, DraftedIEP, WorkflowStatus
-from agents.model_config import invoke_with_fallback
+from agents.model_config import current_date, invoke_with_fallback
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -130,7 +130,7 @@ def _schedule(today: date = None) -> dict:
       March, it ends this March.
     - Annual review: one year after the meeting.
     """
-    today = today or date.today()
+    today = today or current_date()   # frozen in demo mode — see model_config
     start = today + timedelta(days=14)
     ay_end_year = today.year + 1 if today.month >= 4 else today.year
     try:

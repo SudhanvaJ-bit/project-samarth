@@ -8,6 +8,9 @@ Architecture:
   - Embedded with gemini-embedding-2 (retrieval_document task)
   - Queries embedded with retrieval_query task for asymmetric search
   - Persistent store at rag/chroma_db/ — built once, loaded forever
+    (demo mode uses the committed copy in demo/chroma_db/ instead)
+  - Query embeddings are recorded/replayed like LLM calls, so the online
+    demo searches the legal documents without an API key
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -37,7 +40,9 @@ class RetrievalResult:
 logger = logging.getLogger(__name__)
 
 # ── Config ─────────────────────────────────────────────────────────────────
-CHROMA_PATH      = Path("./rag/chroma_db")
+from agents.model_config import DEMO_DIR, DEMO_MODE, embed_with_recording
+
+CHROMA_PATH      = (DEMO_DIR / "chroma_db") if DEMO_MODE else Path("./rag/chroma_db")
 COLLECTION_NAME  = "samarth_legal_docs"
 EMBEDDING_MODEL  = "models/gemini-embedding-2"
 CHUNK_SIZE       = 400   # words per chunk
@@ -48,20 +53,27 @@ EMBED_DELAY_SEC  = 0.5   # delay between batches (rate limit safety)
 
 # ── Gemini embedding helpers ────────────────────────────────────────────────
 
-# At module level — create client once
-
-
 load_dotenv()
 
-_genai_client = genai.Client(
-    api_key=os.getenv("GOOGLE_API_KEY")
-)
+_genai_client = None
+
+
+def _client() -> genai.Client:
+    """Created on first use, so the server can start without an API key."""
+    global _genai_client
+    if _genai_client is None:
+        key = os.getenv("GOOGLE_API_KEY")
+        if not key:
+            raise RuntimeError("GOOGLE_API_KEY is not set, so documents cannot be embedded.")
+        _genai_client = genai.Client(api_key=key)
+    return _genai_client
+
 
 def _embed_documents(texts: list[str]) -> list[list[float]]:
     """Embed a list of texts as retrieval DOCUMENTS (for indexing)."""
     embeddings = []
     for text in texts:
-        result = _genai_client.models.embed_content(
+        result = _client().models.embed_content(
             model=EMBEDDING_MODEL,
             contents=text,
             config=types.EmbedContentConfig(task_type="RETRIEVAL_DOCUMENT"),
@@ -72,12 +84,14 @@ def _embed_documents(texts: list[str]) -> list[list[float]]:
 
 def _embed_query(text: str) -> list[float]:
     """Embed a single text as a retrieval QUERY (for searching)."""
-    result = _genai_client.models.embed_content(
-        model=EMBEDDING_MODEL,
-        contents=text,
-        config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
-    )
-    return result.embeddings[0].values
+    def compute():
+        result = _client().models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=text,
+            config=types.EmbedContentConfig(task_type="RETRIEVAL_QUERY"),
+        )
+        return result.embeddings[0].values
+    return embed_with_recording(text, EMBEDDING_MODEL, "RETRIEVAL_QUERY", compute)
 
 
 # ── PDF chunking ─────────────────────────────────────────────────────────────

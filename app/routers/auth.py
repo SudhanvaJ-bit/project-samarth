@@ -24,6 +24,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
+from agents.model_config import DEMO_MODE
 from app.db import User, get_session
 from app.services.auth import (
     authenticate, create_access_token, create_user, get_current_user,
@@ -106,6 +107,10 @@ def change_password(
     user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    if DEMO_MODE:
+        # One shared account — a visitor must not lock everyone else out
+        raise HTTPException(status_code=403,
+                            detail="Passwords cannot be changed in the online demo.")
     if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect.")
     try:
