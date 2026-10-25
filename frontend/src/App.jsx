@@ -28,6 +28,9 @@ export default function App() {
 
   const [view, setView]               = useState('generate')
   const [reviewIepId, setReviewIepId] = useState(null)
+  // "Generate IEP" on the Students page: which student, and a fresh key so
+  // the Generate page restarts with that student's details filled in
+  const [generateFor, setGenerateFor] = useState({ student: null, key: 0 })
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -42,6 +45,12 @@ export default function App() {
   const resetNavigation = () => {
     setView('generate')
     setReviewIepId(null)
+    setGenerateFor(g => ({ student: null, key: g.key + 1 }))
+  }
+
+  const generateForStudent = (student) => {
+    setGenerateFor(g => ({ student, key: g.key + 1 }))
+    setView('generate')
   }
 
   // Any 401 from the API (expired or deactivated account) lands here
@@ -127,9 +136,12 @@ export default function App() {
   }
 
   const pages = {
-    generate:  <GeneratePage showToast={showToast} openReview={openReview} />,
+    generate:  <GeneratePage key={`generate-${generateFor.key}`} showToast={showToast}
+                 openReview={openReview} initialStudent={generateFor.student}
+                 active={view === 'generate'} />,
     'my-ieps': <MyIEPsPage   showToast={showToast} openReview={openReview} active={view === 'my-ieps'} />,
-    students:  <StudentsPage />,
+    students:  <StudentsPage showToast={showToast} openReview={openReview}
+                 onGenerate={generateForStudent} active={view === 'students'} />,
     analytics: <AnalyticsPage />,
     settings:  <SettingsPage />,
     profile:   <ProfilePage />,

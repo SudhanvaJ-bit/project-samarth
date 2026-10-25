@@ -103,11 +103,13 @@ SAMARTH/
 │   ├── cli.py                # Account management CLI
 │   ├── routers/
 │   │   ├── auth.py           # Login and account endpoints
-│   │   └── iep.py            # Generation and review endpoints
+│   │   ├── iep.py            # Generation and review endpoints
+│   │   └── students.py       # Student register endpoints
 │   └── services/
 │       ├── auth.py           # Hashing, tokens, access control
 │       ├── demo.py           # Demo-mode samples and shared account
 │       ├── draft_store.py    # Draft persistence and audit trail
+│       ├── students.py       # Student register and unique IDs
 │       └── report_extractor.py
 ├── rag/
 │   ├── build_index.py        # Builds the vector index
@@ -224,10 +226,11 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 ## Using SAMARTH
 
 1. **Sign in** as an educator.
-2. **Generate** an IEP by uploading an assessment report PDF, or by filling in the student form.
-3. **Review** it: open the IEP from *My IEPs*, correct student details or any section, and save. Each changed field is marked as human-edited.
-4. **Approve and rebuild** to produce the final PDF. Your account is recorded as the reviewer.
-5. **Download** the PDF.
+2. **Register your students** on the *Students* page. Each student gets a unique ID such as `STU-7K3M9Q`, and only you can see them. Age is calculated from the date of birth, so it is always current.
+3. **Generate** an IEP from a student's record (*Generate IEP* fills the form in), by uploading an assessment report PDF, or by filling in the form directly. IEPs made for a registered student are listed on that student's record.
+4. **Review** it: open the IEP from *My IEPs*, correct student details or any section, and save. Each changed field is marked as human-edited.
+5. **Approve and rebuild** to produce the final PDF. Your account is recorded as the reviewer.
+6. **Download** the PDF.
 
 ---
 
@@ -240,7 +243,10 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 | `POST` | `/auth/me/password` | Change your password |
 | `GET` / `POST` | `/auth/users` | List or create accounts *(admin)* |
 | `PATCH` | `/auth/users/{id}` | Activate or deactivate an account *(admin)* |
-| `POST` | `/iep/generate` | Generate an IEP from form data |
+| `GET` / `POST` | `/students` | Your students, or register one (returns its unique ID) |
+| `GET` / `PATCH` / `DELETE` | `/students/{id}` | One student: view, update or archive, delete (only without IEPs) |
+| `GET` | `/students/{id}/ieps` | A student's IEPs |
+| `POST` | `/iep/generate` | Generate an IEP from form data; optional `student_code` files it under a student |
 | `POST` | `/iep/generate-from-report` | Generate an IEP from a PDF report |
 | `GET` | `/iep/drafts` | Your IEPs |
 | `GET` / `PUT` | `/iep/{id}/draft` | Load or save review edits |
@@ -249,7 +255,7 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 | `GET` | `/iep/health` | Health check *(public)* |
 | `GET` | `/demo` | Online-demo login and sample students; `{"enabled": false}` otherwise *(public)* |
 
-All `/iep` endpoints except `/iep/health` require an educator account.
+All `/iep` and `/students` endpoints except `/iep/health` require an educator account. Another educator's student or IEP returns 404, exactly as if it didn't exist.
 
 ---
 
@@ -342,6 +348,7 @@ This calls the Gemini API for every profile, so it uses quota.
 - [x] Configurable frontend API URL for deployment
 - [x] Containerised deployment (Render + Neon PostgreSQL)
 - [x] PostgreSQL for drafts as well as accounts
+- [x] Student register with unique student IDs
 - [ ] State- and board-specific accommodation rules
 
 ---

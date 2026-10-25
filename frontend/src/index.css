@@ -450,3 +450,9 @@ input:checked+.slider:before{transform:translateX(20px);background:var(--teal)}
 
 @media (max-width:1200px){.three-column-layout{grid-template-columns:1fr 1fr}}
 @media (max-width:900px){.three-column-layout{grid-template-columns:1fr}}
+
+/* Students side panel: let two fields share a row without overflowing */
+.student-drawer .form-row .form-group{min-width:0}
+.student-drawer .form-row .form-group input,
+.student-drawer .form-row .form-group select{width:100%;min-width:0}
+@media (max-width:560px){.student-drawer .form-row{flex-direction:column;gap:16px}}

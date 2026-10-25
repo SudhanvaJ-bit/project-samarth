@@ -178,7 +178,8 @@ def _same(a, b) -> bool:
 # SAVE
 # ─────────────────────────────────────────────────────────────────────────────
 
-def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[int] = None) -> str:
+def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[int] = None,
+               student_code: str = "") -> str:
     """Persist everything needed to rebuild the PDF. Called after the pipeline."""
     profile = _clean_for_json(state.get("student_profile", {}))
     drafted = _clean_for_json(state.get("drafted_iep", {}))
@@ -186,6 +187,7 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[
     record = {
         "iep_id":            iep_id,
         "owner_id":          owner_id,
+        "student_code":      student_code or "",   # registered student, if any
         "student_profile":   profile,
         "drafted_iep":       drafted,
         "compliance_report": _clean_for_json(state.get("compliance_report", {})),
@@ -261,6 +263,7 @@ def list_drafts(owner_id: int, limit: int = 50) -> list:
         profile = rec.get("student_profile", {})
         out.append({
             "iep_id":              rec.get("iep_id", iep_id),
+            "student_code":        rec.get("student_code", ""),
             "student_name":        profile.get("student_name", "Unknown"),
             "disability_category": profile.get("disability_category", ""),
             "grade":               str(profile.get("grade", "") or ""),

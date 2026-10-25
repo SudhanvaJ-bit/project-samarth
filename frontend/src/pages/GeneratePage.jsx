@@ -4,7 +4,9 @@ import {
   FilePdf, PencilSimple, TrendUp, WarningCircle, Pulse, Heart,
   Lightbulb, Paperclip, DownloadSimple, FileText, X,
 } from '@phosphor-icons/react'
-import { generateIEP, generateIEPFromReport, downloadIEP, listDrafts, getDemoInfo, API_BASE_URL } from '../api/samarth'
+import {
+  generateIEP, generateIEPFromReport, downloadIEP, listDrafts, getDemoInfo, listStudents, API_BASE_URL,
+} from '../api/samarth'
 
 const DISABILITIES = [
   'Dyslexia', 'Dysgraphia', 'Dyscalculia', 'Autism Spectrum Disorder', 'ADHD',
@@ -45,6 +47,27 @@ function getStepStatus(stepId, loading, result) {
   return stepId === 'review' ? 'active' : 'completed'
 }
 
+const EMPTY_FORM = {
+  student_name: '', age: '', grade: '', school_name: '',
+  disability_category: '', disability_severity: 'moderate',
+  raw_notes: '', academic_history: '', teacher_observations: '', parent_concerns: '',
+}
+
+/** A registered student (Students page) → the IEP form's fields. */
+const formFromStudent = (s) => ({
+  ...EMPTY_FORM,
+  student_name:         s.full_name,
+  age:                  String(s.age),
+  grade:                s.grade,
+  school_name:          s.school_name,
+  disability_category:  s.disability_category,
+  disability_severity:  s.disability_severity,
+  raw_notes:            s.notes || '',
+  academic_history:     s.academic_history || '',
+  teacher_observations: s.teacher_observations || '',
+  parent_concerns:      s.parent_concerns || '',
+})
+
 // Safely convert any drafted_iep field value to displayable text
 function toPreviewText(value) {
   if (!value) return ''
@@ -53,12 +76,30 @@ function toPreviewText(value) {
   return String(value)
 }
 
-export default function GeneratePage({ showToast, openReview }) {
-  const [form, setForm] = useState({
-    student_name: '', age: '', grade: '', school_name: '',
-    disability_category: '', disability_severity: 'moderate',
-    raw_notes: '', academic_history: '', teacher_observations: '', parent_concerns: '',
-  })
+/**
+ * initialStudent — set when the teacher clicks "Generate IEP" on the
+ * Students page. App.jsx remounts this page with a new key each time, so the
+ * form starts filled in for that student.
+ */
+export default function GeneratePage({ showToast, openReview, initialStudent = null, active = true }) {
+  const [form, setForm] = useState(() =>
+    initialStudent ? formFromStudent(initialStudent) : { ...EMPTY_FORM })
+
+  // Registered students; the chosen one's ID files the IEP under them
+  const [students, setStudents]       = useState(() => initialStudent ? [initialStudent] : [])
+  const [studentCode, setStudentCode] = useState(initialStudent?.student_code ?? '')
+
+  useEffect(() => {
+    if (!active) return
+    listStudents()
+      .then(({ data }) => setStudents(prev => {
+        const list = data ?? []
+        // Keep a preselected student in the menu even if archived since
+        const extra = prev.filter(p => !list.some(s => s.student_code === p.student_code))
+        return [...list, ...extra]
+      }))
+      .catch(() => { /* picker is optional */ })
+  }, [active])
 
   const [errors, setErrors]             = useState({})
   const [attachedFile, setAttachedFile] = useState(null)
@@ -82,6 +123,7 @@ export default function GeneratePage({ showToast, openReview }) {
 
   const loadSample = (id) => {
     setSampleId(id)
+    setStudentCode('')
     const sample = demo?.samples?.find(s => s.id === id)
     if (!sample) return
     // Copy every field exactly — the demo replays only unedited samples
@@ -95,6 +137,15 @@ export default function GeneratePage({ showToast, openReview }) {
     setError(null)
     setResult(null)
     setAttachedFile(null)
+  }
+
+  const pickStudent = (code) => {
+    setStudentCode(code)
+    const student = students.find(s => s.student_code === code)
+    setForm(student ? formFromStudent(student) : { ...EMPTY_FORM })
+    setErrors({})
+    setError(null)
+    setResult(null)
   }
 
   const fileRef = useRef()
@@ -141,9 +192,13 @@ export default function GeneratePage({ showToast, openReview }) {
     try {
       let res
       if (attachedFile) {
-        res = await generateIEPFromReport(attachedFile)
+        res = await generateIEPFromReport(attachedFile, studentCode)
       } else {
-        res = await generateIEP({ ...form, age: parseInt(form.age, 10) })
+        res = await generateIEP({
+          ...form,
+          age: parseInt(form.age, 10),
+          ...(studentCode ? { student_code: studentCode } : {}),
+        })
       }
 
       setResult(res.data)
@@ -262,6 +317,27 @@ export default function GeneratePage({ showToast, openReview }) {
           <div className="card">
             <div className="card-header"><h3>Student Details</h3></div>
             <div className="modern-form">
+
+              {(students.length > 0 || studentCode) && (
+                <div className="form-group">
+                  <label htmlFor="registered-student">Registered student</label>
+                  <select id="registered-student" value={studentCode}
+                    onChange={e => pickStudent(e.target.value)}>
+                    <option value="">Not linked — enter details below</option>
+                    {students.map(s => (
+                      <option key={s.student_code} value={s.student_code}>
+                        {s.full_name} · {s.student_code}
+                      </option>
+                    ))}
+                  </select>
+                  {studentCode && (
+                    <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+                      Filled in from the student's record. Changes here apply to this IEP
+                      only; edit the student on the Students page to update their record.
+                    </span>
+                  )}
+                </div>
+              )}
 
               {demo && (
                 <div className="form-group" style={{

@@ -117,7 +117,9 @@ export default function MyIEPsPage({ showToast, openReview, active = true }) {
                         alt={item.student_name} />
                       <div>
                         <span className="name">{item.student_name}</span>
-                        <span className="id">{item.iep_id.slice(0, 12)}…</span>
+                        <span className="id" style={item.student_code ? { fontFamily: 'monospace' } : undefined}>
+                          {item.student_code || `${item.iep_id.slice(0, 12)}…`}
+                        </span>
                       </div>
                     </div>
                   </td>

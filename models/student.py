@@ -46,6 +46,9 @@ class StudentInput(BaseModel):
                                       description="Classroom behaviour notes")
     parent_concerns:      Optional[str] = Field(None,
                                       description="Parent submitted concerns")
+    student_code:         Optional[str] = Field(None, max_length=16,
+                                      description="Registered student's ID (e.g. STU-7K3M9Q), "
+                                                  "to file the IEP under that student")
 
     def to_pipeline_input(self, student_id: str) -> dict:
         """

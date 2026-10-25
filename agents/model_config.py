@@ -235,10 +235,22 @@ _is_retryable_elsewhere = is_capacity_error
 # The single fallback loop
 # ─────────────────────────────────────────────────────────────────────────────
 
+# When EVERY model in a chain is busy, wait and go round the chain again.
+# Google's "high demand" 503s usually clear within seconds, so a short pause
+# turns most of these failures into a slightly slower success.
+# SAMARTH_FALLBACK_ROUNDS=1 restores the old single pass.
+try:
+    FALLBACK_ROUNDS = max(1, int(os.getenv("SAMARTH_FALLBACK_ROUNDS", "3")))
+except ValueError:
+    FALLBACK_ROUNDS = 3
+ROUND_WAIT_SECONDS = (5, 15)          # pause before round 2, round 3, …
+
+
 def generate_content_with_fallback(role: str, contents, config=None, max_chain: int = None):
     """
     Call generate_content across the model chain for `role`, one attempt per
-    model, moving on at the first capacity error.
+    model, moving on at the first capacity error. If the whole chain is busy,
+    wait briefly and try the chain again, up to FALLBACK_ROUNDS times.
 
     Args:
         role     : key in MODEL_CHAINS
@@ -246,48 +258,56 @@ def generate_content_with_fallback(role: str, contents, config=None, max_chain: 
         config   : optional GenerateContentConfig (schema, temperature, …)
 
     Returns (response, model_name).
-    Raises the last error if every model fails, or immediately on an error
-    that is NOT about capacity (e.g. a bad request), since another model
-    would fail the same way.
+    Raises the last error if every round fails, or immediately on an error
+    that is NOT about capacity (e.g. a bad request or a wrong API key),
+    since another model or another try would fail the same way.
     """
     chain = get_models(role)
     if max_chain:
         chain = chain[:max_chain]
 
     last_error = None
-    for attempt, model_name in enumerate(chain, start=1):
-        try:
-            if attempt > 1:
-                logger.warning(f"  ↩️  Falling back to '{model_name}' (model {attempt} of {len(chain)})")
-
-            started  = time.time()
-            response = get_client().models.generate_content(
-                model=model_name, contents=contents, config=config,
+    for round_no in range(1, FALLBACK_ROUNDS + 1):
+        if round_no > 1:
+            wait = ROUND_WAIT_SECONDS[min(round_no - 2, len(ROUND_WAIT_SECONDS) - 1)]
+            logger.warning(
+                f"  ⏳ All {len(chain)} '{role}' models busy — waiting {wait}s, "
+                f"then round {round_no} of {FALLBACK_ROUNDS}"
             )
-            elapsed = time.time() - started
+            time.sleep(wait)
 
-            if not (response.text or "").strip():
-                # An empty reply (e.g. a safety block) — let the next model try
-                raise RuntimeError(f"503 UNAVAILABLE: empty response from {model_name}")
+        for attempt, model_name in enumerate(chain, start=1):
+            try:
+                if attempt > 1:
+                    logger.warning(f"  ↩️  Falling back to '{model_name}' (model {attempt} of {len(chain)})")
 
-            if attempt > 1:
-                logger.info(f"  ✅ Succeeded on fallback '{model_name}' ({elapsed:.1f}s)")
-            else:
-                logger.info(f"  ✅ '{model_name}' responded ({elapsed:.1f}s)")
-            return response, model_name
+                started  = time.time()
+                response = get_client().models.generate_content(
+                    model=model_name, contents=contents, config=config,
+                )
+                elapsed = time.time() - started
 
-        except Exception as e:
-            last_error = e
-            if is_capacity_error(e) and attempt < len(chain):
-                logger.warning(f"  ⚠️  '{model_name}' unavailable ({str(e)[:80]}…) — trying next")
-                time.sleep(1)
-                continue
-            logger.error(
-                f"  ❌ '{role}' failed on '{model_name}' "
-                f"(model {attempt} of {len(chain)}): {str(e)[:120]}"
-            )
-            raise
+                if not (response.text or "").strip():
+                    # An empty reply (e.g. a safety block) — let the next model try
+                    raise RuntimeError(f"503 UNAVAILABLE: empty response from {model_name}")
 
+                if attempt > 1 or round_no > 1:
+                    logger.info(f"  ✅ Succeeded on '{model_name}' "
+                                f"(round {round_no}, model {attempt}; {elapsed:.1f}s)")
+                else:
+                    logger.info(f"  ✅ '{model_name}' responded ({elapsed:.1f}s)")
+                return response, model_name
+
+            except Exception as e:
+                last_error = e
+                if not is_capacity_error(e):
+                    logger.error(f"  ❌ '{role}' failed on '{model_name}': {str(e)[:120]}")
+                    raise
+                logger.warning(f"  ⚠️  '{model_name}' unavailable ({str(e)[:80]}…)")
+                if attempt < len(chain):
+                    time.sleep(1)
+
+    logger.error(f"  ❌ '{role}': every model busy after {FALLBACK_ROUNDS} round(s)")
     raise last_error
 
 

@@ -109,10 +109,47 @@ export const generateIEP = (studentData) =>
   api.post('/iep/generate', studentData)
 
 // Do NOT set Content-Type manually — axios must add the multipart boundary
-export const generateIEPFromReport = (pdfFile) => {
+export const generateIEPFromReport = (pdfFile, studentCode = '') => {
   const formData = new FormData()
   formData.append('file', pdfFile)
+  if (studentCode) formData.append('student_code', studentCode)
   return api.post('/iep/generate-from-report', formData)
+}
+
+// ── Students (each educator's own register) ───────────
+
+export const listStudents = (includeArchived = false) =>
+  reviewApi.get('/students', { params: { include_archived: includeArchived } })
+
+export const createStudent = (fields) =>
+  reviewApi.post('/students', fields)
+
+export const updateStudent = (code, fields) =>
+  reviewApi.patch(`/students/${encodeURIComponent(code)}`, fields)
+
+export const deleteStudent = (code) =>
+  reviewApi.delete(`/students/${encodeURIComponent(code)}`)
+
+export const listStudentIEPs = (code) =>
+  reviewApi.get(`/students/${encodeURIComponent(code)}/ieps`)
+
+/**
+ * FastAPI validation errors arrive as a list of objects; turn any error
+ * response into one readable sentence for the UI.
+ */
+export const errorText = (err, fallback = 'Something went wrong.') => {
+  const detail = err?.response?.data?.detail
+  if (Array.isArray(detail)) {
+    return detail.map(d => {
+      const field = Array.isArray(d.loc) ? d.loc[d.loc.length - 1] : ''
+      const msg = String(d.msg || '').replace(/^Value error, /, '')
+      return field && !msg.toLowerCase().includes(String(field).replace(/_/g, ' '))
+        ? `${String(field).replace(/_/g, ' ')}: ${msg}` : msg
+    }).join(' · ')
+  }
+  if (typeof detail === 'string') return detail
+  if (!err?.response) return `Could not reach the server at ${API_BASE_URL}.`
+  return fallback
 }
 
 // ── Human Review ──────────────────────────────────────

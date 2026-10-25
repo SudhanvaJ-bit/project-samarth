@@ -16,6 +16,10 @@ for it receives 404, exactly as if it didn't exist.
   GET  /iep/{id}/download
   GET  /iep/health                 — public
 
+FILING UNDER A STUDENT
+Both generate endpoints accept an optional student_code (see
+app/routers/students.py). The IEP is then listed on that student's page.
+
 REVIEWER IDENTITY
 "reviewed_by" is taken from the logged-in account, not from the request.
 Previously any name could be typed in; now the audit trail records who
@@ -30,15 +34,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from sqlmodel import Session
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from agents.graph import run_iep_pipeline
 from agents.model_config import DEMO_MODE
-from app.db import User
+from app.db import User, engine
 from app.services import demo, draft_store
+from app.services import students as register
 from app.services.auth import require_educator
 from app.services.report_extractor import extract_student_data_from_pdf
 from models.student import IEPResponse, StudentInput
@@ -122,8 +128,19 @@ def _check_daily_limit(user: User) -> None:
         )
 
 
+def _resolve_student_code(code: Optional[str], user: User) -> str:
+    """'' when no student was chosen; 404 if the code isn't one of yours."""
+    if not code or not code.strip():
+        return ""
+    with Session(engine) as session:
+        student = register.get_owned(session, code, user.id)
+    if student is None:
+        raise HTTPException(status_code=404, detail=f"No student found with ID {code}.")
+    return student.student_code
+
+
 def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
-                     source: str, user: User) -> IEPResponse:
+                     source: str, user: User, student_code: str = "") -> IEPResponse:
     logger.info(f"[{source}] {user.email} started IEP pipeline for: {student_name}")
     final_state = run_iep_pipeline(student_data, iep_id)
 
@@ -137,7 +154,8 @@ def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
 
     if final_state.get("drafted_iep"):
         try:
-            draft_store.save_draft(final_state, iep_id, pdf_full_path, owner_id=user.id)
+            draft_store.save_draft(final_state, iep_id, pdf_full_path, owner_id=user.id,
+                                   student_code=student_code)
         except Exception as e:
             logger.error(f"Draft persistence failed for {iep_id}: {e}")
             errors = list(errors) + [f"Draft not saved for review: {e}"]
@@ -183,6 +201,7 @@ async def generate_iep(payload: StudentInput, user: User = Depends(require_educa
                     "the sample students. Pick one from 'Load a sample student' and "
                     "generate it without editing the fields."),
         )
+    student_code = _resolve_student_code(payload.student_code, user)
     _check_daily_limit(user)
     try:
         student_data = payload.to_pipeline_input(iep_id)
@@ -190,7 +209,8 @@ async def generate_iep(payload: StudentInput, user: User = Depends(require_educa
         # keeps the server answering other requests — other teachers, and
         # the host's health checks, which would otherwise restart it.
         return await run_in_threadpool(
-            _run_and_respond, student_data, iep_id, payload.student_name, "manual", user)
+            _run_and_respond, student_data, iep_id, payload.student_name, "manual", user,
+            student_code)
     except HTTPException:
         raise
     except Exception as e:
@@ -201,6 +221,7 @@ async def generate_iep(payload: StudentInput, user: User = Depends(require_educa
 @router.post("/generate-from-report", response_model=IEPResponse, status_code=201,
              summary="Upload a psychoeducational report PDF and generate an IEP")
 async def generate_iep_from_report(file: UploadFile = File(...),
+                                   student_code: Optional[str] = Form(None),
                                    user: User = Depends(require_educator)):
     if DEMO_MODE:
         # A public demo must never receive a real child's report
@@ -209,6 +230,7 @@ async def generate_iep_from_report(file: UploadFile = File(...),
     if not file.filename.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
+    student_code = _resolve_student_code(student_code, user)
     _check_daily_limit(user)
     pdf_bytes = await file.read()
     if len(pdf_bytes) > 20 * 1024 * 1024:
@@ -243,7 +265,7 @@ async def generate_iep_from_report(file: UploadFile = File(...),
     try:
         return await run_in_threadpool(
             _run_and_respond, student_data, iep_id, extracted["student_name"],
-            "pdf-report", user)
+            "pdf-report", user, student_code)
     except Exception as e:
         logger.error(f"Pipeline error for IEP {iep_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Pipeline error: {str(e)}")
