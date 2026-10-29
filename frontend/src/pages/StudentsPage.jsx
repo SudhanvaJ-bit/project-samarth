@@ -58,10 +58,16 @@ function ErrorBox({ children }) {
 
 // ── The add / edit form ─────────────────────────────────────────────────
 
-function StudentForm({ student, onSaved, onClose, onGenerate, openReview, showToast }) {
+function StudentForm({ student, onSaved, onClose, onGenerate, openReview, showToast, prefs }) {
   const isNew = !student
   const [form, setForm]       = useState(() =>
-    isNew ? { ...EMPTY } : Object.fromEntries(FIELDS.map(k => [k, student[k] ?? ''])))
+    isNew
+      ? { ...EMPTY,                                   // saved defaults from Settings
+          school_name:         prefs?.default_school_name || '',
+          grade:               prefs?.default_grade || '',
+          disability_severity: prefs?.default_severity || 'moderate',
+          dominant_language:   prefs?.default_language || '' }
+      : Object.fromEntries(FIELDS.map(k => [k, student[k] ?? ''])))
   const [saving, setSaving]   = useState(false)
   const [error, setError]     = useState(null)
   const [more, setMore]       = useState(!isNew && MORE_FIELDS.some(k => student[k]))
@@ -344,7 +350,7 @@ function StudentForm({ student, onSaved, onClose, onGenerate, openReview, showTo
 
 // ── The page ────────────────────────────────────────────────────────────
 
-export default function StudentsPage({ showToast, onGenerate, openReview, active = true }) {
+export default function StudentsPage({ showToast, onGenerate, openReview, active = true, prefs = null }) {
   const [students, setStudents]     = useState([])
   const [loading, setLoading]       = useState(true)
   const [error, setError]           = useState(null)
@@ -497,6 +503,7 @@ export default function StudentsPage({ showToast, onGenerate, openReview, active
           onGenerate={generateFor}
           openReview={(id) => { setEditing(null); openReview?.(id) }}
           showToast={showToast}
+          prefs={prefs}
         />
       )}
     </>

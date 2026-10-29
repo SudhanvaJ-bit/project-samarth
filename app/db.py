@@ -117,6 +117,19 @@ class Student(SQLModel, table=True):
     updated_at:           datetime      = Field(default_factory=_utcnow)
 
 
+class UserPreferences(SQLModel, table=True):
+    """
+    Per-educator settings from the Settings page (defaults that pre-fill the
+    forms). A separate table, so adding preferences never requires changing
+    the users table of an existing database.
+    """
+    __tablename__ = "user_preferences"
+
+    user_id:    int      = Field(foreign_key="users.id", primary_key=True)
+    prefs:      dict     = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    updated_at: datetime = Field(default_factory=_utcnow)
+
+
 class IEPDraft(SQLModel, table=True):
     """
     One IEP. `record` holds the full draft document — student profile,

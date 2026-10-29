@@ -688,12 +688,14 @@ def _make_header_footer(iep_id: str, student_name: str):
         canvas.setFillColor(DARK_NAVY)
         canvas.rect(0, page_h - 1.6 * _cm, page_w, 1.6 * _cm, fill=1, stroke=0)
         canvas.setFillColor(WHITE)
-        canvas.setFont("Helvetica-Bold", 11)
-        canvas.drawCentredString(page_w / 2, page_h - 1.0 * _cm, "INDIVIDUALIZED EDUCATION PROGRAM")
+        # Project name as the title; the document type stays in the small
+        # line below so readers (parents, schools) know what this is.
+        canvas.setFont("Helvetica-Bold", 14)
+        canvas.drawCentredString(page_w / 2, page_h - 0.95 * _cm, "SAMARTH")
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(colors.HexColor("#a5b4c8"))
         canvas.drawCentredString(page_w / 2, page_h - 1.4 * _cm,
-            "Project SAMARTH · Compliant with RPwD Act 2016 & NCTE/NCERT Guidelines · India")
+            "Individualized Education Program (IEP) · RPwD Act 2016 & NCTE/NCERT Guidelines · India")
         canvas.setFillColor(colors.HexColor("#f1f5f9"))
         canvas.rect(0, 0, page_w, 1.2 * _cm, fill=1, stroke=0)
         canvas.setFillColor(MID_GRAY)
@@ -733,7 +735,7 @@ def generate_iep_pdf(state: dict, output_dir: str = "outputs") -> str:
         output_path, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=2.2 * cm, bottomMargin=1.6 * cm,
-        title=f"IEP — {student_name or iep_id}", author="Project SAMARTH",
+        title=f"SAMARTH IEP — {student_name or iep_id}", author="SAMARTH",
     )
 
     on_page = _make_header_footer(iep_id, student_name)

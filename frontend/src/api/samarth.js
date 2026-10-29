@@ -97,6 +97,9 @@ export const login = async (email, password) => {
 
 export const fetchMe = () => reviewApi.get('/auth/me')
 
+export const updateMe = (fullName) =>
+  reviewApi.patch('/auth/me', { full_name: fullName })
+
 export const changePassword = (currentPassword, newPassword) =>
   reviewApi.post('/auth/me/password', {
     current_password: currentPassword,
@@ -187,3 +190,15 @@ export const checkHealth = () =>
 /** Public: {enabled:false}, or the demo login + sample students on the online demo. */
 export const getDemoInfo = () =>
   reviewApi.get('/demo')
+
+// ── Analytics & settings ──────────────────────────────
+
+/** The browser's UTC offset in minutes (India = 330), so months match local time. */
+const tzOffset = () => -new Date().getTimezoneOffset()
+
+export const getAnalytics = () =>
+  reviewApi.get('/analytics', { params: { tz_offset_minutes: tzOffset() } })
+
+export const getPreferences  = () => reviewApi.get('/settings/preferences')
+export const savePreferences = (prefs) => reviewApi.put('/settings/preferences', prefs)
+export const getSystemInfo   = () => reviewApi.get('/settings/system')

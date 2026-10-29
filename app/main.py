@@ -39,6 +39,8 @@ from app.services import demo                                   # noqa: E402
 from app.routers.auth import router as auth_router             # noqa: E402
 from app.routers.iep import router as iep_router               # noqa: E402
 from app.routers.students import router as students_router     # noqa: E402
+from app.routers.analytics import router as analytics_router   # noqa: E402
+from app.routers.settings import router as settings_router     # noqa: E402
 from rag.retriever import initialize_retriever, get_retriever_stats  # noqa: E402
 
 load_dotenv()
@@ -111,6 +113,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(iep_router)
 app.include_router(students_router)
+app.include_router(analytics_router)
+app.include_router(settings_router)
 
 
 # ── Optional: serve the built website from this server ──────────────────

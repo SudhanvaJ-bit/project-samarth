@@ -29,6 +29,7 @@ actually made each change.
 
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -142,7 +143,9 @@ def _resolve_student_code(code: Optional[str], user: User) -> str:
 def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
                      source: str, user: User, student_code: str = "") -> IEPResponse:
     logger.info(f"[{source}] {user.email} started IEP pipeline for: {student_name}")
+    started     = time.monotonic()
     final_state = run_iep_pipeline(student_data, iep_id)
+    took        = round(time.monotonic() - started, 1)
 
     workflow_status   = _normalise_status(final_state.get("workflow_status"))
     compliance_status = _normalise_status(
@@ -155,7 +158,7 @@ def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
     if final_state.get("drafted_iep"):
         try:
             draft_store.save_draft(final_state, iep_id, pdf_full_path, owner_id=user.id,
-                                   student_code=student_code)
+                                   student_code=student_code, generation_seconds=took)
         except Exception as e:
             logger.error(f"Draft persistence failed for {iep_id}: {e}")
             errors = list(errors) + [f"Draft not saved for review: {e}"]

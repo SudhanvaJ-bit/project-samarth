@@ -232,6 +232,8 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 5. **Approve and rebuild** to produce the final PDF. Your account is recorded as the reviewer.
 6. **Download** the PDF.
 
+*Analytics* shows your totals, review progress, disability and grade mix, how often you corrected the AI's draft, and average generation time. *Settings* saves defaults (school, grade, severity, language) that pre-fill the forms, and shows how the workspace is set up.
+
 ---
 
 ## API overview
@@ -252,6 +254,10 @@ API documentation is at http://localhost:8000/docs. Click **Authorize** and sign
 | `GET` / `PUT` | `/iep/{id}/draft` | Load or save review edits |
 | `POST` | `/iep/{id}/finalize` | Approve and rebuild the PDF |
 | `GET` | `/iep/{id}/download` | Download the PDF |
+| `GET` | `/analytics` | Figures for the Analytics page, from your own records |
+| `GET` / `PUT` | `/settings/preferences` | Your saved form defaults |
+| `GET` | `/settings/system` | How the server is set up: AI mode, models, daily limit *(read-only)* |
+| `PATCH` | `/auth/me` | Change your display name |
 | `GET` | `/iep/health` | Health check *(public)* |
 | `GET` | `/demo` | Online-demo login and sample students; `{"enabled": false}` otherwise *(public)* |
 

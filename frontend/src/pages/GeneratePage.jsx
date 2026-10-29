@@ -30,11 +30,6 @@ const PREVIEW_SECTIONS = [
   ['special_education_services', 'Special Education Services'],
 ]
 
-const NOTIFICATIONS = [
-  { id: 1, unread: true,  color: 'var(--teal)',       icon: <CheckCircle size={20} />,   msg: 'IEP Generated for Alex Johnson',       time: '2 mins ago' },
-  { id: 2, unread: true,  color: 'var(--lavender)',   icon: <WarningCircle size={20} />, msg: 'Review Required for Marcus Rodriguez', time: '1 hour ago' },
-  { id: 3, unread: false, color: 'var(--sage-green)', icon: <Bell size={20} />,          msg: 'New student profile: Mia Chen',        time: 'Yesterday' },
-]
 
 /**
  * Pipeline steps 1-4 complete together when the backend returns.
@@ -51,6 +46,25 @@ const EMPTY_FORM = {
   student_name: '', age: '', grade: '', school_name: '',
   disability_category: '', disability_severity: 'moderate',
   raw_notes: '', academic_history: '', teacher_observations: '', parent_concerns: '',
+}
+
+/** The empty form, with the educator's saved defaults (Settings page). */
+const blankForm = (prefs) => ({
+  ...EMPTY_FORM,
+  school_name:         prefs?.default_school_name || '',
+  grade:               prefs?.default_grade || '',
+  disability_severity: prefs?.default_severity || 'moderate',
+})
+
+function timeAgo(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const mins = Math.round((Date.now() - d.getTime()) / 60000)
+  if (mins < 1)  return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.round(mins / 60)
+  if (hrs < 24)  return `${hrs} h ago`
+  return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
 /** A registered student (Students page) → the IEP form's fields. */
@@ -81,9 +95,9 @@ function toPreviewText(value) {
  * Students page. App.jsx remounts this page with a new key each time, so the
  * form starts filled in for that student.
  */
-export default function GeneratePage({ showToast, openReview, initialStudent = null, active = true }) {
+export default function GeneratePage({ showToast, openReview, initialStudent = null, active = true, prefs = null }) {
   const [form, setForm] = useState(() =>
-    initialStudent ? formFromStudent(initialStudent) : { ...EMPTY_FORM })
+    initialStudent ? formFromStudent(initialStudent) : blankForm(prefs))
 
   // Registered students; the chosen one's ID files the IEP under them
   const [students, setStudents]       = useState(() => initialStudent ? [initialStudent] : [])
@@ -107,7 +121,6 @@ export default function GeneratePage({ showToast, openReview, initialStudent = n
   const [result, setResult]             = useState(null)
   const [error, setError]               = useState(null)
   const [notifOpen, setNotifOpen]       = useState(false)
-  const [notifs, setNotifs]             = useState(NOTIFICATIONS)
   // Counters come from the server — the signed-in educator's IEPs only
   const [drafts, setDrafts]             = useState([])
 
@@ -142,7 +155,7 @@ export default function GeneratePage({ showToast, openReview, initialStudent = n
   const pickStudent = (code) => {
     setStudentCode(code)
     const student = students.find(s => s.student_code === code)
-    setForm(student ? formFromStudent(student) : { ...EMPTY_FORM })
+    setForm(student ? formFromStudent(student) : blankForm(prefs))
     setErrors({})
     setError(null)
     setResult(null)
@@ -152,7 +165,8 @@ export default function GeneratePage({ showToast, openReview, initialStudent = n
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const unreadCount = notifs.filter(n => n.unread).length
+  // The bell lists real IEPs that still need the teacher's review
+  const toReview = drafts.filter(d => d.review_status !== 'approved')
 
   const loadStats = useCallback(async () => {
     try {
@@ -256,26 +270,28 @@ export default function GeneratePage({ showToast, openReview, initialStudent = n
           <button className="btn btn-icon" style={{ position: 'relative' }}
             onClick={() => setNotifOpen(o => !o)}>
             <Bell size={20} />
-            {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
+            {toReview.length > 0 && <span className="notification-badge">{toReview.length}</span>}
           </button>
 
           {notifOpen && (
             <div className="notification-dropdown">
               <div className="dropdown-header">
-                <h3>Notifications</h3>
-                <button className="btn-clear-all" onClick={() => {
-                  setNotifs(ns => ns.map(n => ({ ...n, unread: false })))
-                  setNotifOpen(false)
-                }}>
-                  Mark all as read
-                </button>
+                <h3>Needs your review</h3>
+                <button className="btn-clear-all" onClick={() => setNotifOpen(false)}>Close</button>
               </div>
-              {notifs.map(n => (
-                <div key={n.id} className={`notification-item ${n.unread ? 'unread' : ''}`}>
-                  <div className="notif-icon" style={{ color: n.color }}>{n.icon}</div>
+              {toReview.length === 0 && (
+                <div className="notification-item">
+                  <div className="notif-icon" style={{ color: 'var(--sage-green)' }}><CheckCircle size={20} /></div>
+                  <div className="notif-content"><p>All your IEPs are approved.</p></div>
+                </div>
+              )}
+              {toReview.slice(0, 6).map(d => (
+                <div key={d.iep_id} className="notification-item unread" style={{ cursor: 'pointer' }}
+                  onClick={() => { setNotifOpen(false); openReview?.(d.iep_id) }}>
+                  <div className="notif-icon" style={{ color: 'var(--lavender)' }}><WarningCircle size={20} /></div>
                   <div className="notif-content">
-                    <p>{n.msg}</p>
-                    <span>{n.time}</span>
+                    <p>Review {d.review_status === 'edited' ? 'in progress' : 'needed'} for {d.student_name}</p>
+                    <span>{timeAgo(d.updated_at || d.created_at)}</span>
                   </div>
                 </div>
               ))}

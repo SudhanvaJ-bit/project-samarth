@@ -3,6 +3,7 @@ app/routers/auth.py
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   POST  /auth/login          — email + password → access token
   GET   /auth/me             — the logged-in user
+  PATCH /auth/me             — change your display name
   POST  /auth/me/password    — change your own password
   GET   /auth/users          — list accounts            (admin)
   POST  /auth/users          — create an account        (admin)
@@ -64,6 +65,10 @@ class UserUpdate(BaseModel):
     is_active: bool
 
 
+class ProfileUpdate(BaseModel):
+    full_name: str
+
+
 class PasswordChange(BaseModel):
     current_password: str
     new_password:     str
@@ -98,6 +103,24 @@ def login(
 
 @router.get("/me", response_model=UserOut, summary="The currently logged-in user")
 def me(user: User = Depends(get_current_user)):
+    return UserOut(**public_user(user))
+
+
+@router.patch("/me", response_model=UserOut, summary="Change your display name")
+def update_me(
+    payload: ProfileUpdate,
+    user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    if DEMO_MODE:
+        raise HTTPException(status_code=403, detail="The demo account can't be renamed.")
+    name = (payload.full_name or "").strip()
+    if not 2 <= len(name) <= 120:
+        raise HTTPException(status_code=400, detail="Name must be 2–120 characters.")
+    user.full_name = name
+    session.add(user)
+    session.commit()
+    session.refresh(user)
     return UserOut(**public_user(user))
 
 

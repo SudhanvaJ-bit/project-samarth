@@ -179,7 +179,7 @@ def _same(a, b) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[int] = None,
-               student_code: str = "") -> str:
+               student_code: str = "", generation_seconds: Optional[float] = None) -> str:
     """Persist everything needed to rebuild the PDF. Called after the pipeline."""
     profile = _clean_for_json(state.get("student_profile", {}))
     drafted = _clean_for_json(state.get("drafted_iep", {}))
@@ -188,6 +188,7 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[
         "iep_id":            iep_id,
         "owner_id":          owner_id,
         "student_code":      student_code or "",   # registered student, if any
+        "generation_seconds": generation_seconds,  # pipeline time, for Analytics
         "student_profile":   profile,
         "drafted_iep":       drafted,
         "compliance_report": _clean_for_json(state.get("compliance_report", {})),

@@ -11,7 +11,7 @@ import SettingsPage from './pages/SettingsPage'
 import ProfilePage from './pages/ProfilePage'
 import ReviewPage from './pages/ReviewPage'
 import {
-  getToken, getStoredUser, fetchMe, clearSession, setUnauthorizedHandler,
+  getToken, getStoredUser, fetchMe, clearSession, setUnauthorizedHandler, getPreferences,
 } from './api/samarth'
 
 export default function App() {
@@ -31,6 +31,22 @@ export default function App() {
   // "Generate IEP" on the Students page: which student, and a fresh key so
   // the Generate page restarts with that student's details filled in
   const [generateFor, setGenerateFor] = useState({ student: null, key: 0 })
+  // The educator's saved defaults (Settings page). prefsVersion changes when
+  // they load or are saved, so the Generate form restarts with them.
+  const [prefs, setPrefs]               = useState(null)
+  const [prefsVersion, setPrefsVersion] = useState(0)
+
+  useEffect(() => {
+    if (user?.role !== 'educator') return
+    getPreferences()
+      .then(({ data }) => { setPrefs(data); setPrefsVersion(v => v + 1) })
+      .catch(() => { /* defaults are optional */ })
+  }, [user?.id, user?.role])
+
+  const handlePrefsSaved = (saved) => {
+    setPrefs(saved)
+    setPrefsVersion(v => v + 1)
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -136,15 +152,18 @@ export default function App() {
   }
 
   const pages = {
-    generate:  <GeneratePage key={`generate-${generateFor.key}`} showToast={showToast}
+    generate:  <GeneratePage key={`generate-${generateFor.key}-${prefsVersion}`} showToast={showToast}
                  openReview={openReview} initialStudent={generateFor.student}
-                 active={view === 'generate'} />,
+                 active={view === 'generate'} prefs={prefs} />,
     'my-ieps': <MyIEPsPage   showToast={showToast} openReview={openReview} active={view === 'my-ieps'} />,
     students:  <StudentsPage showToast={showToast} openReview={openReview}
-                 onGenerate={generateForStudent} active={view === 'students'} />,
-    analytics: <AnalyticsPage />,
-    settings:  <SettingsPage />,
-    profile:   <ProfilePage />,
+                 onGenerate={generateForStudent} active={view === 'students'} prefs={prefs} />,
+    analytics: <AnalyticsPage active={view === 'analytics'} openReview={openReview} />,
+    settings:  <SettingsPage showToast={showToast} theme={theme}
+                 toggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+                 prefs={prefs} onPrefsSaved={handlePrefsSaved} />,
+    profile:   <ProfilePage user={user} onUserUpdated={setUser} showToast={showToast}
+                 active={view === 'profile'} />,
   }
 
   // key={user.id} remounts every page when a different person signs in, so
