@@ -43,6 +43,7 @@ from sqlalchemy import func
 from sqlalchemy.orm.attributes import flag_modified
 from sqlmodel import Session, select
 
+from agents.model_config import current_date
 from app.db import IEPDraft, engine
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,7 @@ def save_draft(state: dict, iep_id: str, pdf_path: str = "", owner_id: Optional[
         "owner_id":          owner_id,
         "student_code":      student_code or "",   # registered student, if any
         "generation_seconds": generation_seconds,  # pipeline time, for Analytics
+        "meeting_date":      current_date().isoformat(),   # fixed for every rebuild
         "student_profile":   profile,
         "drafted_iep":       drafted,
         "compliance_report": _clean_for_json(state.get("compliance_report", {})),
@@ -391,4 +393,16 @@ def to_pdf_state(record: dict) -> dict:
         "student_profile":   record.get("student_profile", {}),
         "drafted_iep":       record.get("drafted_iep", {}),
         "compliance_report": record.get("compliance_report", {}),
+        "student_code":      record.get("student_code", ""),
+        "meeting_date":      record.get("meeting_date") or _created_local_date(record),
     }
+
+
+def _created_local_date(record: dict) -> str:
+    """Meeting date for IEPs saved before it was stored: the day they were made."""
+    from agents.model_config import LOCAL_TZ
+    try:
+        created = datetime.fromisoformat(str(record.get("created_at")))
+        return created.astimezone(LOCAL_TZ).date().isoformat()
+    except (TypeError, ValueError):
+        return ""

@@ -155,6 +155,15 @@ def _run_and_respond(student_data: dict, iep_id: str, student_name: str,
     errors        = final_state.get("error_log", [])
     succeeded     = "completed" in workflow_status.lower()
 
+    # The pipeline doesn't know the registered student (their code is kept out
+    # of the AI's input), so rebuild the PDF with it — no AI calls, < 1 s.
+    if student_code and succeeded and pdf_full_path:
+        try:
+            pdf_full_path = generate_iep_pdf({**final_state, "student_code": student_code},
+                                             output_dir=str(OUTPUTS_DIR))
+        except Exception as e:
+            logger.warning(f"PDF rebuild with student ID failed for {iep_id}: {e}")
+
     if final_state.get("drafted_iep"):
         try:
             draft_store.save_draft(final_state, iep_id, pdf_full_path, owner_id=user.id,

@@ -147,3 +147,57 @@ def test_pdf_title_is_samarth(client, educator, fake_pipeline, workdir):
     assert top.strip() == "SAMARTH"
     assert "INDIVIDUALIZED EDUCATION PROGRAM" not in first
     assert "Individualized Education Program (IEP)" in first     # small subtitle
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# PDF details: footer, student ID, meeting date
+# ═════════════════════════════════════════════════════════════════════════
+
+def _pdf_pages(client, headers, iep_id, workdir):
+    import pdfplumber
+    path = workdir / f"{iep_id}.pdf"
+    path.write_bytes(client.get(f"/iep/{iep_id}/download", headers=headers).content)
+    return pdfplumber.open(str(path))
+
+
+def test_pdf_footer_is_honest_and_does_not_overlap(client, educator, fake_pipeline, workdir):
+    iep_id = generate(client, educator)
+    with _pdf_pages(client, educator, iep_id, workdir) as pdf:
+        page = pdf.pages[0]
+        text = page.extract_text()
+        assert "Compliant with RPwD" not in text            # Section 1 has the real status
+        assert "educator review required" in text
+        assert " IST" in text                                 # India time, not server UTC
+        # Footer: everything in the bottom 1.2 cm must not overlap horizontally
+        footer = sorted((w for w in page.extract_words() if w["top"] > page.height - 34),
+                        key=lambda w: w["x0"])
+        assert footer
+        for a, b in zip(footer, footer[1:]):
+            assert a["x1"] <= b["x0"] + 0.5, f"{a['text']!r} overlaps {b['text']!r}"
+
+
+def test_pdf_shows_registered_student_id(client, educator, fake_pipeline, workdir):
+    s = client.post("/students", headers=educator, json={
+        "full_name": "Arjun Sharma", "date_of_birth": "2016-03-14", "grade": "Grade 4",
+        "school_name": "DPS Bengaluru", "disability_category": "Dyslexia",
+    }).json()
+    iep_id = generate(client, educator, student_code=s["student_code"])
+    with _pdf_pages(client, educator, iep_id, workdir) as pdf:
+        assert f"Student ID {s['student_code']}" in pdf.pages[0].extract_text()
+    # The PDF made right after generation shows it too, not only rebuilds
+    import glob
+    first = max(glob.glob(str(workdir / "outputs" / "IEP_*.pdf")), key=lambda p: __import__("os").path.getmtime(p))
+    import pdfplumber
+    with pdfplumber.open(first) as pdf:
+        assert s["student_code"] in pdf.pages[0].extract_text()
+
+
+def test_meeting_date_does_not_change_on_rebuild(client, educator, fake_pipeline, workdir, monkeypatch):
+    monkeypatch.setenv("SAMARTH_FIXED_DATE", "2026-01-15")
+    iep_id = generate(client, educator)
+    monkeypatch.setenv("SAMARTH_FIXED_DATE", "2026-03-01")       # weeks later…
+    client.post(f"/iep/{iep_id}/finalize", headers=educator)      # …the teacher approves
+    with _pdf_pages(client, educator, iep_id, workdir) as pdf:
+        text = pdf.pages[0].extract_text()
+    assert "Date of IEP Meeting 15 January 2026" in text
+    assert "1 March 2026" not in text

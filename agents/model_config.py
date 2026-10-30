@@ -46,7 +46,7 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -99,12 +99,27 @@ def _read_demo_manifest() -> dict:
         return {}
 
 
+# Dates and times shown to people use India time by default (servers such as
+# Render run on UTC). India has no daylight saving, so a fixed offset is exact.
+try:
+    _TZ_MINUTES = int(os.getenv("SAMARTH_TZ_OFFSET_MINUTES", "330"))
+except ValueError:
+    _TZ_MINUTES = 330
+LOCAL_TZ = timezone(timedelta(minutes=_TZ_MINUTES))
+LOCAL_TZ_LABEL = "IST" if _TZ_MINUTES == 330 else (
+    f"UTC{'+' if _TZ_MINUTES >= 0 else '-'}{abs(_TZ_MINUTES) // 60:02d}:{abs(_TZ_MINUTES) % 60:02d}")
+
+
+def now_local() -> datetime:
+    return datetime.now(LOCAL_TZ)
+
+
 def current_date() -> date:
     """
     "Today" as the pipeline should see it.
       1. SAMARTH_FIXED_DATE=YYYY-MM-DD, if set
       2. demo mode: the date the demo was recorded (demo/manifest.json)
-      3. otherwise the real date
+      3. otherwise today's date in India time (LOCAL_TZ)
     """
     fixed = os.getenv("SAMARTH_FIXED_DATE", "").strip()
     if not fixed and DEMO_MODE:
@@ -114,7 +129,7 @@ def current_date() -> date:
             return date.fromisoformat(fixed)
         except ValueError:
             logger.warning(f"Ignoring invalid fixed date '{fixed}' (use YYYY-MM-DD)")
-    return date.today()
+    return now_local().date()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
